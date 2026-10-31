@@ -5,7 +5,7 @@ object NativeAudio {
     external fun start(): Boolean
     external fun stop()
     external fun configure(root: Int, scale: Int, amount: Float, retuneMs: Float, reverb: Float)
-    // [detectedHz, targetHz, correctionCents, voiced, sampleRate, missingFrames, processedFrames, running]
+    // [detectedHz, targetHz, correctionCents, voiced, sampleRate, missingFrames, processedFrames, running, xruns, algoLatencyMs, cbMaxMs, cbAvgMs]
     external fun snapshot(): DoubleArray
     external fun lastError(): String
 }

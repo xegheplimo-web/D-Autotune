@@ -56,7 +56,10 @@ class MainActivity : Activity() {
                 pitchValue.text = if (s[3] > 0) "%.1f Hz".format(Locale.US, s[0]) else "—"
                 targetValue.text = if (s[3] > 0) "%.1f Hz".format(Locale.US, s[1]) else "—"
                 correctionValue.text = if (s[3] > 0) "%+.0f cents".format(Locale.US, s[2]) else "—"
-                telemetry.text = "${s[4].toInt()} Hz  ·  thiếu ${s[5].toLong()} frames  ·  DSP ${s[6].toLong()} frames"
+                val algoMs = "%.1f".format(Locale.US, s[9])
+                val cbMaxMs = "%.2f".format(Locale.US, s[10])
+                val cbAvgMs = "%.2f".format(Locale.US, s[11])
+                telemetry.text = "${s[4].toInt()} Hz  ·  thiếu ${s[5].toLong()} frames  ·  DSP ${s[6].toLong()} frames  ·  xrun ${s[8].toLong()}  ·  trễ ~$algoMs ms  ·  cb $cbMaxMs/$cbAvgMs ms"
                 if (s[7] < 0.5) stopAudio("Audio engine đã dừng")
                 else mainHandler.postDelayed(this, 250)
             }
