@@ -125,6 +125,20 @@ DC-003 REV2 verification (correlation-based diagnostic loopback, commit `f844289
 - **Class-1-only labeling** (UI): "Result is labeled diagnostic; it is never a mic→DSP→headphone latency" — exactly the card's hard constraint.
 - RT safety: measurement state is armed on the UI thread (allocation allowed there); the callback path uses atomics/fixed-size loops/memcpy only; measInside_ guard prevents re-entry.
 
+Gate 16 — G2-D3 clean-room TD-PSOLA shifter (VERIFIED GREEN — commit `8ee8394` + cleanup `5538e8b`, runs 41192970665 + 41193157913, 2026-10-31 17:3x local):
+- Scope check (Hermes-verified `git diff --stat ca68e4b..5538e8b`): exactly 5 card files — PitchCorrector.cpp (+162, shifter path), PitchCorrector.h (+56, shifter state), docs/baseline/D3_CHANGES.md (+142), native-tests/CMakeLists.txt (+12), test_d3_shifter.cpp (+695 NEW). No .devin/, no .orchestrator/ writes.
+- **detect() + applyDetection() byte-frozen** (Hermes-verified: SHA256 of both function regions identical across 70b1147 → 5538e8b; `detect()` sha 8aef5451…). Tracker untouched.
+- **6/6 ctest green** (pitch_corrector, d0_baseline, d1_improvement, d2_tracking, d3_shifter NEW, ping_math; 1.82 s total). D1 floor identical: det 97.8 / med 0.2 / p95 14.5 / oct 0.00 / VUV 97.7 (7563 chunks).
+- **D3 batteries ALL PASS (CI log, sr 48000 + 44100)**:
+  - A. corrected-output F0: full-chain sung 285→D4 output 293.56–293.57 Hz (err −0.6 ¢ across 1 s); driven +500 ¢ → 293.663 Hz (−0.01 ¢); amount=0 bypass bit-exact.
+  - B. formant retention (vowel 220 Hz +500 ¢): PSOLA F1 666.2 Hz (−43.6, inside ±60) / F2 1207.6 (+29.4); F1/F0 ratio moves 610 ¢ (formants stay put). **Legacy granular FAILS the ±60 Hz gate** (F1 880.0/F2 1410.6 — formants follow pitch) — the D0 metallic-artifact risk is now PROVEN fixed.
+  - C. click-free: driven step out |dy| 0.0282 ≤ in-slew bound; energy no pump (rms 0.238/0.206/0.200); real note-change boundary step NOT amplified (0.0695 ≤ 1.25× in 0.1130); sustained r=1.15 glitch-free.
+  - D. transient: impulse emitted exactly once at +109 samp, within ~1 period; onset delay 238 samp (5.0 ms), overshoot 1.0 dB < 6 dB.
+  - E. DSP delay: 109–200 samp (2.27–4.17 ms) ≤ P+1 budget (80 Hz worst = 601 samp = 12.5 ms), deterministic across 2 runs, both rates.
+  - F. RT safety: 2 fresh instances bit-identical; per-call cost median 14.0 µs / p95 15.2 µs < 200 µs budget (D0 reference 14.7 µs — no cost regression).
+- Honest deviations (Devin report + CI): F1/F0 move 610 ¢ < the 3× floor's raw threshold at 120 Hz rows (impulse centroid −1, excess under floor) — documented, onset carries the delay measurement; wall-clock ±3 µs jitter, all DSP numbers bit-identical.
+- Sequencing: dispatched ~16:47 after D2-EXT landed (same repo, no commit race — Devin synced on 70b1147).
+
 ---
 
 Updated verification status:
