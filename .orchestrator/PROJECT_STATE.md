@@ -72,3 +72,15 @@ P0 (this session): RECON → ANALYZE → DECIDE → PLAN → ASSIGN (no Devin CL
 P1 (next session / user decision): If GPT collaboration is required for DSP architecture decisions (P1 blocking per `docs/ROADMAP.md`: accurate pitch tracker, formant-preserving shifter, quality analysis), restore the collaboration (relaunch Chrome :9222, re-check ChatGPT URL). Until then, P1 work is BLOCKED by the missing channel.
 P2 (after P1): Device qualification (`docs/ROADMAP.md` P2) — requires real Samsung devices, not simulated.
 P3 (after P2): Commercial launch (`docs/ROADMAP.md` P3) — requires privacy policy, Play policy compliance, trademark clearance (note from `docs/THIRD_PARTY.md`: "Auto-Tune" may be a trademark).
+
+## 7. Session update 2026-10-31 (CI GREEN milestone — supersedes §3 for GPT collaboration status)
+
+GPT collaboration: §3 is SUPERSEDED. Round-1 brief was delivered via ChatGPT (attong39@gmail.com) and the reply archived verbatim at `docs/orchestration/gpt_g0_consultation_reply.md`; verdict encoded in `DECISIONS.md` D-007 (GO — G0 + CI parallel; Compose at G3; keep API 30/36 + 16 KB/API 37 gate; DSP: YIN → Tracking → TD-PSOLA → verification).
+
+CI milestone (first full pass in project history):
+- Run 41178223381 @ `848693c`: BOTH jobs success + artifact `D-Autotune-debug-APK` (1.93 MB, downloaded + SHA256 `eefe97e7…`).
+- APK-level verification: 16 KB PT_LOAD `p_align == 0x4000` for ALL 6 .so (2 ABIs); exactly ONE permission (`RECORD_AUDIO`); both ABIs present.
+- Fix cascade (5 runs): setup-android license hang → wrapper-JAR 404 → Prefab CXX1212 STL mismatch → Kotlin `fillViewport` interop → GREEN. Full evidence: `VERIFICATION.md` Gate 11; decisions D-008..D-011; run ledger `RUNS.jsonl` (5 rows).
+- Ownership discipline held: DC-001 (Devin) = ci.yml only; D-009/D-010/D-011 (Hermes mechanical) = 2-line URL swap + 1-argument build config + 1-token Kotlin interop, each forced by the exact compiler/CI error and each verified by the NEXT run getting further.
+
+In flight: DC-002 — latency/xrun instrumentation (Devin, card `scratch/dautotune-cards/dc-002-latency-instrumentation.md`). G0 audit item #14 (G1 prerequisite). Snapshot layout 8→12, xruns + algoLatency + cbMax/cbAvg, callback remains allocation/lock/log-free.
