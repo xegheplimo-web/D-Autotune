@@ -167,3 +167,108 @@ existing ~15 µs detector call).
   wholesale only past 150 ms.
 - D2 adds no detector accuracy (D1 scope) and no render path (D3 scope);
   its claim is the state behavior the unit tests pin down.
+
+## Round-3 test extension (G2-D2EXT, verdict D-014)
+
+GPT round-3 accepted D2 **with a test extension**: measure applied F0,
+target-note transitions and correction ratio — not only reported
+`detectedHz` — across staccato notes, scale-boundary vibrato and
+300–1200 ¢ intervals, and add target-note hysteresis *only if* the tests
+expose target chatter. Five new batteries (F1/F2 staccato, G vibrato,
+H1/H2 intervals) were added to `test_d2_tracking.cpp`; the tracker code
+is **unchanged** (see verdict below). `appliedHz_` is internal, so the
+applied F0 is recovered exactly from public telemetry:
+`appliedHz = targetHz / 2^(correctionCents/(1200·amount))`.
+
+### F — staccato note transitions
+
+A3 85 ms → C4 64 ms → A3 107 ms with 43 ms gaps (< 150 ms breath window).
+A3→C4 is +300.1 ¢ — just over the 300 ¢ gate — so every onset exercises
+the pending-jump cadence (pending frame → agreeing frame reseeds), which
+is the strictest bound the card's "≤ 2 frames ≈ 21 ms" allows.
+
+```
+F1 seam per-note metrics:
+| note | retune ms | settle ms | max applied-F0 err c | max resid c | transitions |
+| A3   |      10.7 |       0.0 |                  0.0 |         0.0 |           0 |
+| C4   |      10.7 |       0.0 |                  0.0 |         0.0 |           1 |
+| A3   |      10.7 |       0.0 |                  0.0 |         0.0 |           1 |
+F2 audio (6-harmonic voice, real detector):
+| A3   |       0.0 |       0.0 |                  0.4 |         0.4 |           0 |
+| C4   |      10.7 |       0.0 |                  0.4 |         0.4 |           1 |
+| A3   |      10.7 |       0.0 |                  0.2 |         0.2 |           1 |
+```
+
+"Onset retune" = first admitted detection of the new note → target
+landing on its scale member; 10.7 ms = one update, i.e. the pending
+frame IS the admission and the landing is the 2nd new-note update
+(21.3 ms counting from note onset). Audio note 1 lands in 0.0 ms because
+the armed-onset rule voices the very first confident frame — the seam
+has no `armedLeft_` (it lives in `detect()`), so the seam cold start
+takes the 2-update agreement path instead. Per-chunk telemetry (in the
+test output) shows the real-detector behavior across a gap: the voiced
+flag holds ~2 chunks on window-tail energy, drops once for 3 chunks,
+re-voices on the pending frame with the **target frozen** — one
+flag-transition pair per gap, never a flap, never an early target flip.
+Correction residual at note centers: ≤ 0.4 ¢.
+
+### G — scale-boundary vibrato (C major, G3↔A3 boundary at G#3 = 207.65 Hz)
+
+In C major the members neighbouring A3 sit at ±200 ¢, so the basin edges
+are ±100 ¢ and a ±50 ¢ vibrato on A3 cannot cross. The crossing carrier
+is therefore the boundary itself (G#3 ±50 ¢), and a second carrier at
+G3+55 ¢ makes only the vibrato peak graze ~5 ¢ into the A3 basin — the
+slow-crossing case most likely to chatter.
+
+```
+G1 seam non-crossing A3±50c (+jitter):  0 transitions; det span 213.4..226.7 Hz
+G2 seam crossing G#3±50c:              10 transitions / 5.1 cycles, min dwell 9 upd
+G3 seam crossing + ±4c jitter:         10 transitions, min dwell 9 upd (unchanged)
+G4 seam graze G3+55c±50c +jitter:      10 transitions (single enter+exit pairs)
+G5a audio non-crossing:                 0 transitions
+G5b audio crossing:                    10 transitions, min dwell 9 upd
+G5c audio graze:                        9 transitions, min dwell 4 upd (graze pairs)
+```
+
+Every transition is a clean G3↔A3 member switch: ~2 per vibrato cycle
+for the crossing carrier (one per boundary crossing, per the card's
+"transitions ONCE at the crossing"), enter+exit pairs for the graze,
+zero for the non-crossing carrier. `detectedHz` tracks the full ±50 ¢
+swing throughout — the estimate stream is untouched.
+
+### H — 300–1200 ¢ intervals
+
+A3 → D4 (+500) → A4 (+1200 total, +700 over D4 — the card's "D5 +700"
+lands on A4) → A3 (−1200). All three jumps take the pending-jump path;
+the −1200 ¢ octave return is a musical interval, not a detector octave
+confusion, and is accepted as a normal note change.
+
+```
+H1 seam:   | A3 10.7 | D4 10.7 | A4 10.7 | A3 10.7 |  retune ms, resid 0.0 c
+H2 audio:  | A3  0.0 | D4 10.7 | A4 10.7 | A3 10.7 |  retune ms
+           resid <= 0.8 c, max applied-F0 err <= 0.8 c, 1 transition per note
+```
+
+Pending frames hold the voiced flag with the target frozen on the old
+member while `detectedHz` already reports the new note — the correction
+never sag-flaps and never pre-flips.
+
+### Verdict: NO target-note hysteresis added — tests did not expose chatter
+
+The chatter instrument is a member-transition run of ≥ 3 inside one
+vibrato half-cycle (9 updates), plus per-note transition counts > 1.
+Across 5 seam cases and 3 real-detector runs — including the ±4 ¢
+jitter probe and the ~5 ¢-deep graze that spends only 2–4 updates per
+cycle across the boundary — the median-of-3 ring produced **zero**
+flip-flop runs (min interior dwell 4 updates on grazes, 9 on crossings;
+the tracker follows the estimate and the estimate does not alternate).
+A Schmitt margin on the snapped member would change nothing these tests
+can measure, so per the card the state machine is **not** modified:
+`PitchCorrector.{h,cpp}` untouched — `detect()` region SHA-256
+`e4c5617eef346db305f89953db4c3b520d1937a67f6399f98b3bd5afb5bdae7d`
+identical to commit `080ea4d`, whole-file diff empty.
+
+The D1 floor therefore holds by construction and by measurement:
+`d0_baseline` grand total det 97.8 % / med 0.2 ¢ / p95 14.5 ¢ / oct
+0.00 % / VUV 97.7 %, confusion tvEu 83 / tuEv 6 @48 k and 77 / 6 @44.1 k —
+identical to the D2 close-out numbers above.
