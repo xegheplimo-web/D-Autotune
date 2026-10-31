@@ -144,3 +144,9 @@ D-016 — D6 scope: fix the 2 real-voice defects + octave tail; pumping fix NOT 
 - Decision: D6 = (1) detector sub-octave lock — female-only ~1200¢ tail (f1/f3 p95) with output audibly an octave low in those windows; (2) R2 formant — per-window diagnosis first (engine damage vs LPC measurement noise on high-F0 female frames), fix the right side, never loosen the gate silently; (3) R4 onset amplification — root-cause the soft-onset steps amplified up to 11.53× and fix without regressing the D3 transient-preservation + click-free batteries. NEW R1 gate: 0 windows ≥600¢ (the octave signature) across the whole corpus.
 - Rationale: fix by evidence, not by gate adjustment; full regression suite (D0–D5) must stay green; listening pack v1 kept for the owner's listening of the current state, regenerated after D6.
 
+D-017 — D6 landing accepted; next-order = blind listening → G3; R4 residual documented (2026-10-31, commit `bf6c3e9`):
+- Evidence: CI 41206064557 GREEN both jobs on `bf6c3e9`; orchestrator local re-run 10/10 ctest PASS; before→after on the real corpus: R1 tail 0≥600¢, R2 worst 41/31 Hz (gate unchanged ±60), R4 0/432 worst 1.17×, R3 +0.03 dB, R5 3.75 ms.
+- Decision: accept the D6 landing as the real-voice defect closure; the instrumented diagnosis (measureF0 cap artifact vs real detector octave-UP/DOWN locks; R4 teleport) is authoritative over the initial hypotheses. R4 residual worst 1.17× documented; a tighter CI bound (≤1.1×) goes to GPT round-5 as a question rather than asserted unilaterally. Next-order sent to GPT: blind listening (3 listeners) → G3 Compose implementation → G1 device smoke.
+- Rationale: gates were never loosened (R2 ±60 Hz unchanged; new R1 gate ADDED); every fix is evidence-driven; questions to GPT keep the review protocol honest.
+
+

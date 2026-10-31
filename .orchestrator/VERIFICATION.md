@@ -159,6 +159,13 @@ Gate 18 — D5 real-voice corpus landing + first R1–R5 real run (2026-10-31, H
 - Scope check (Hermes): e70719c touches only `docs/corpus/**` + `THIRD_PARTY.md` (Hermes-owned attribution). Key fix `b7bd4a1`: the committed listening_key.csv was header-only (skip-corpus pack run artifact); the regenerated 16-pair key is now committed. Listening pack v1 generated locally (8 pairs; WAVs gitignored, key/sheet committed).
 - Control-plane: D6 card dispatched to Devin from `b7bd4a1` (root-cause + fix R2/R4/octave-tail; CI expected red until D6 lands — the gate worked as designed).
 
+Gate 19 — D6 real-voice defect root-cause + fix landing (2026-10-31, Hermes-verified):
+- Commit `bf6c3e9` pushed to main; CI run **41206096057→41206064557 GREEN (both jobs)** — main is green again after the by-design red of 41199096037. Scope verified: only PitchCorrector.{h,cpp} (+180/+33), native-tests/d5_measure.h (+128), test_d5_realvoice.cpp (+32), CI_GATES.md §7 (+12), D6_CHANGES.md report (+159), .gitignore (+1 log pattern), .orchestrator bookkeeping — NO forbidden files (corpus data, THIRD_PARTY.md, d2_reference, android, ci.yml untouched).
+- Orchestrator local re-verification: full 10/10 ctest PASS on Windows (d0_baseline, d1_improvement, d2_tracking, d2ext, d3_shifter, d4_e2e, ping_math, d5_harness, d5_realvoice 11.92 s on the real corpus, d5_listening_pack); matches Devin's claim and CI.
+- Instrumented diagnosis corrected the initial hypotheses: female ~1200¢ tail = measureF0 600 Hz cap measurement artifact (output NOT octave-low); real engine defect = detector octave-UP lock (H2-dominant, scales_o ~580 Hz winners on a 285 Hz note) + octave-DOWN phantom (scales_i@7.36, 118.5 Hz on 236 Hz); R2 mostly harmonic-grid band-edge measurement artifact except the genuinely-locked segment; R4 = passthrough-lag teleport at V/UV onset (0.5·lastPeriod_ re-anchor), NOT a transient-guard miss.
+- Before→after on the real corpus: R1 octave tail ~1200¢ windows → **0 ≥600¢** (new gate asserted); R2 worst F1/F2 884/482 → **41/31 Hz** (±60 gate unchanged); R4 5/432 worst 11.53× → **0/432 worst 1.17×**; R3 +0.03 dB and R5 3.75 ms unchanged; summary 3 FAILURES → COMPLETE, 0 warnings. Listening pack regenerated — key byte-identical to b7bd4a1.
+
+
 
 ---
 

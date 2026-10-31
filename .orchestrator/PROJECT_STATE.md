@@ -155,3 +155,11 @@ In flight: DC-002 — latency/xrun instrumentation (Devin, card `scratch/dautotu
 - **Round-5 brief to GPT**: real-voice measurements + defect evidence + D6 scope + R3 closure + listening pack ready (3-person listening BLOCKED_HUMAN).
 - G3 prep unchanged (`docs/design/G3_UI_CONTRACT.md`); Compose remains gated on real-voice smoke-test PASS — now additionally gated on D6 fixes landing. G1 still BLOCKED_HARDWARE.
 
+## 17. Session update 2026-10-31 (D6 LANDED — real-voice defects fixed, CI green on main, brief round-5 ready)
+- **D6 LANDED**: commit `bf6c3e9` (Devin, card `g2-d6-realvoice-fix.md`), CI run 41206064557 GREEN both jobs; orchestrator re-verified 10/10 ctest locally. The gate worked: run 41199096037 RED by design caught 2 real defects; instrumentation then corrected the initial diagnosis (female ~1200¢ tail was a measureF0 measurement artifact, output NOT octave-low; the REAL engine defects were detector octave-UP/DOWN phantom locks on H2-dominant voice + R4 passthrough-lag teleport at V/UV onset).
+- **Fixes**: detect() subharmonic check; applyDetection() pair-evidence octave-phantom veto (seam detections never vetoed — D2 battery H untouched); passLag_ slews at the xfade rate (no teleport, no latency, no heap); measureF0 1000 Hz band + octave-safe multi-candidate pick; R2 scorer → LPC envelope centroid (order 24); NEW R1 gate 0 windows ≥600¢ in CI_GATES.md §7.
+- **Numbers**: R1 tail 0≥600¢ (was ~1205¢); R1 p95 f1 39.7 / f3 28.3 / m1 67.1 / m3 62.1¢; R2 worst 41/31 Hz (gate ±60 unchanged); R4 0/432 worst 1.17× (was 5/432 worst 11.53×); R3 +0.03 dB, R5 3.75 ms unchanged. Summary: 3 FAILURES → COMPLETE, 0 warnings.
+- **Round-5 brief** (`docs/orchestration/gpt_round5_brief.md`) updated with the corrected diagnosis + D6 landing + before→after table; 5 questions to GPT (D6 verdict, next-order listening→G3, R4 residual gate, listening protocol, corpus breadth). GPT send pending via Chrome debug.
+- Blind listening BLOCKED_HUMAN (pack ready); G3 implementation unblocked pending GPT round-5 verdict; G1 BLOCKED_HARDWARE.
+
+
