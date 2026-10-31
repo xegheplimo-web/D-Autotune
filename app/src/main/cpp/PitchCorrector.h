@@ -33,16 +33,35 @@ public:
     // energy/armed bookkeeping is untouched). Unit tests only.
     void updateTargetForTest(float hz, float conf, bool relaxed = false,
                              bool provisional = false, float leadSec = 0.0f) noexcept;
+    // D3 test seam: pins the shifter's applied F0 and correction ratio so the
+    // render path can be exercised at shifts the +/-300-cent scale-snap law
+    // cannot produce (the D3 formant gate needs +500 cents). Pin while
+    // appliedHz > 0 and ratio > 0; appliedHz <= 0 releases it. Unit tests only.
+    void psolaDriveForTest(float appliedHz, float ratio) noexcept;
 
 private:
     static constexpr int kHistorySize = 16384;  // Power of two.
     static constexpr int kDetectWindow = 512;
     static constexpr int kDownsample = 4;
     static constexpr int kDetectHop = 512;
-    static constexpr int kShiftWindow = 1024;
-    static constexpr int kBaseDelay = 384;
     static constexpr int kReverbSizeA = 1631;
     static constexpr int kReverbSizeB = 2111;
+    // D3 TD-PSOLA bounds. The shifter follows the detector's 80..1000 Hz F0
+    // range; each grain spans 2 periods of the applied F0.
+    static constexpr int kPsolaMaxGrains = 6;
+    static constexpr float kPsolaMinF0 = 80.0f;
+    static constexpr float kPsolaMaxF0 = 1000.0f;
+    // V/UV crossfade ~5 ms, and applied-F0 movement above ~60 cents (note
+    // change / tracker reseed) re-anchors the grain grid.
+    static constexpr float kUvXfadeSec = 0.005f;
+    static constexpr float kReseedCents = 60.0f;
+    // Transient guard: a >4x jump over the running peak envelope routes the
+    // output through the delay-aligned passthrough for 2.5 applied periods,
+    // so a click is emitted once (marks would otherwise re-read it for r>1).
+    static constexpr float kTransRatio = 4.0f;
+    static constexpr float kTransFloor = 0.05f;
+    static constexpr float kTransHold = 2.5f;   // in applied periods
+    static constexpr float kTransDecay = 0.998f; // ~20 ms envelope tail @48k
 
     // Internal detector output (D1): richer than the public PitchResult —
     // carries the analysis staleness and pass provenance used by updateTarget.
@@ -56,7 +75,9 @@ private:
 
     DetOut detect() noexcept;
     float delayed(float lagSamples) const noexcept;
-    float shift(float ratio) noexcept;
+    float histAt(double absoluteIndex) const noexcept;
+    float psolaShift(float ratio) noexcept;
+    void psolaResync(float period, std::uint64_t now) noexcept;
     void updateTarget() noexcept;
     // D2: shared post-detection logic for updateTarget() and the test seam.
     void applyDetection(const DetOut& r) noexcept;
@@ -73,7 +94,34 @@ private:
     int frameSinceDetection_ = 0;
     std::size_t reverbIndexA_ = 0;
     std::size_t reverbIndexB_ = 0;
-    float phase_ = 0.0f;
+
+    // D3 TD-PSOLA shifter state (fixed-size, allocation-free; ~200 bytes).
+    // Analysis marks ride a grid phase-locked to the applied F0; synthesis
+    // marks are laid at the output period P/r; each output grain is a
+    // 2-period Hann window read verbatim from the newest analysis mark at or
+    // before its synthesis center. Marks repeat (r > 1) or skip (r < 1) —
+    // the mark-index mapping is what changes pitch without resampling the
+    // grains, so the spectral envelope (formants) does not move.
+    struct Grain {
+        double outCenter;  // synthesis mark, absolute output index
+        double inCenter;   // analysis mark, absolute input index
+        float halfLen;     // applied period in samples at lay time (span 2x)
+    };
+    std::array<Grain, kPsolaMaxGrains> grains_{};
+    int grainCount_ = 0;
+    double markOut_ = 0.0;       // next synthesis mark, absolute output index
+    double gridNext_ = 0.0;      // newest analysis mark, absolute input index
+    float gridPeriod_ = 0.0f;    // analysis grid spacing, tracks applied F0
+    float lastPeriod_ = 0.0f;    // last applied period (UV holdover/alignment)
+    float lastAppliedHz_ = 0.0f; // applied-F0 jump detector for grid reseeds
+    float uvGain_ = 0.0f;        // 0 = aligned passthrough .. 1 = PSOLA
+    float uvSlew_ = 0.0f;        // per-sample crossfade step (1/xfade samples)
+    float driveHz_ = 0.0f;       // test pin: applied F0 (0 = follow tracker)
+    float driveRatio_ = 1.0f;    // test pin: correction ratio
+    float transientEnv_ = 0.0f;  // decaying |x| peak envelope for onsets
+    int transientHold_ = 0;      // samples left routing transients to passthrough
+    bool grainGridValid_ = false;
+
     float smoothedRatio_ = 1.0f;
     float lastTargetRatio_ = 1.0f;
     float lastFrequencyHz_ = 0.0f;

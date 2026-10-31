@@ -43,6 +43,18 @@ add_test(NAME d2_tracking COMMAND d2_tracking)
 add_custom_command(TARGET d2_tracking POST_BUILD
                    COMMAND d2_tracking
                    COMMENT "D2 tracking + hysteresis test report")
+# D3: deterministic TD-PSOLA shifter tests (output F0, formants, clicks,
+# transients, signal delay, realtime safety).
+add_executable(d3_shifter test_d3_shifter.cpp corpus_gen.cpp
+               ../app/src/main/cpp/PitchCorrector.cpp)
+target_include_directories(d3_shifter PRIVATE ../app/src/main/cpp ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(d3_shifter PRIVATE cxx_std_17)
+target_compile_options(d3_shifter PRIVATE -O2 -Wall -Wextra -Wpedantic)
+add_test(NAME d3_shifter COMMAND d3_shifter)
+# Same trick: ctest hides passing output, so the D3 table is re-run at build.
+add_custom_command(TARGET d3_shifter POST_BUILD
+                   COMMAND d3_shifter
+                   COMMENT "D3 TD-PSOLA shifter test report")
 # DC-003 REV2: normalized cross-correlation lag detection (pure math, no Oboe).
 add_executable(test_ping_math test_ping_math.cpp
                ../app/src/main/cpp/PingMath.cpp)

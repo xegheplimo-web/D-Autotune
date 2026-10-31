@@ -11,7 +11,6 @@ constexpr float kA4 = 440.0f;
 
 int mod12(int n) noexcept { return (n % 12 + 12) % 12; }
 float clampf(float x, float lo, float hi) noexcept { return std::max(lo, std::min(hi, x)); }
-float fract(float x) noexcept { return x - std::floor(x); }
 
 // D1: one YIN-style cumulative-mean-normalized-difference scan (written
 // clean-room from the algorithm description). `x` points at a contiguous
@@ -70,7 +69,19 @@ void PitchCorrector::reset(int sampleRate) noexcept {
     frameSinceDetection_ = 0;
     reverbIndexA_ = 0;
     reverbIndexB_ = 0;
-    phase_ = 0.0f;
+    grainCount_ = 0;
+    markOut_ = 0.0;
+    gridNext_ = 0.0;
+    gridPeriod_ = 0.0f;
+    lastPeriod_ = static_cast<float>(sampleRate_) / 220.0f;
+    lastAppliedHz_ = 0.0f;
+    uvGain_ = 0.0f;
+    uvSlew_ = 1.0f / std::max(1.0f, kUvXfadeSec * static_cast<float>(sampleRate_));
+    driveHz_ = 0.0f;
+    driveRatio_ = 1.0f;
+    transientEnv_ = 0.0f;
+    transientHold_ = 0;
+    grainGridValid_ = false;
     smoothedRatio_ = 1.0f;
     lastTargetRatio_ = 1.0f;
     lastFrequencyHz_ = 0.0f;
@@ -274,25 +285,142 @@ PitchCorrector::DetOut PitchCorrector::detect() noexcept {
     return out;
 }
 
-float PitchCorrector::delayed(float lagSamples) const noexcept {
-    // Mask BEFORE float conversion: absolute frame indexes lose single-sample precision after ~6 min.
-    float pos = static_cast<float>((totalSamples_ - 1) & (kHistorySize - 1)) - lagSamples;
-    const float base = std::floor(pos);
-    const float alpha = pos - base;
+float PitchCorrector::histAt(double absoluteIndex) const noexcept {
+    // Absolute-index read with linear interpolation. Doubles keep
+    // single-sample precision for the life of the stream (the 16384-deep
+    // power-of-two ring makes unwritten reads land on zeroed history).
+    const double base = std::floor(absoluteIndex);
     const std::int64_t i = static_cast<std::int64_t>(base);
     const float a = history_[static_cast<std::uint64_t>(i) & (kHistorySize - 1)];
     const float b = history_[static_cast<std::uint64_t>(i + 1) & (kHistorySize - 1)];
-    return a + (b - a) * alpha;
+    return a + static_cast<float>(absoluteIndex - base) * (b - a);
 }
 
-float PitchCorrector::shift(float ratio) noexcept {
-    // Two Hann-windowed read heads. Their grain boundaries occur at zero weight.
-    phase_ = fract(phase_ + (ratio - 1.0f) / kShiftWindow);
-    const float second = fract(phase_ + 0.5f);
-    const float a = delayed(kBaseDelay + kShiftWindow * (1.0f - phase_));
-    const float b = delayed(kBaseDelay + kShiftWindow * (1.0f - second));
-    const float weight = 0.5f - 0.5f * std::cos(2.0f * kPi * phase_);
-    return a * weight + b * (1.0f - weight);
+float PitchCorrector::delayed(float lagSamples) const noexcept {
+    return histAt(static_cast<double>(totalSamples_ - 1) - lagSamples);
+}
+
+void PitchCorrector::psolaResync(float period, std::uint64_t now) noexcept {
+    // No true glottal marks are detected: the analysis grid only needs a
+    // consistent phase within the note. The strongest positive excursion in
+    // the last ~1.2 periods is that anchor (an epoch proxy); a bounded O(P)
+    // scan that runs only on note changes / grid invalidation, not per frame.
+    const std::uint64_t span = static_cast<std::uint64_t>(1.2f * period) + 1;
+    const std::uint64_t from = now > span ? now - span : 0;
+    std::uint64_t best = from;
+    float peak = std::numeric_limits<float>::lowest();
+    for (std::uint64_t i = from; i <= now; ++i) {
+        const float v = history_[i & (kHistorySize - 1)];
+        if (v > peak) {
+            peak = v;
+            best = i;
+        }
+    }
+    gridNext_ = static_cast<double>(best);
+    gridPeriod_ = period;
+    markOut_ = static_cast<double>(now) + period;
+    grainGridValid_ = true;
+}
+
+float PitchCorrector::psolaShift(float ratio) noexcept {
+    const std::uint64_t now = totalSamples_ - 1;
+    const bool driven = driveHz_ > 0.0f;
+    const float f0 = driven ? driveHz_
+                            : (voiced_.load(std::memory_order_relaxed) ? appliedHz_ : 0.0f);
+    const float r = driven ? driveRatio_ : ratio;
+    const bool active = f0 > 0.0f && std::isfinite(f0) && std::isfinite(r) && r > 0.0f;
+
+    if (active) {
+        const float period = clampf(static_cast<float>(sampleRate_) / f0,
+                                    static_cast<float>(sampleRate_) / kPsolaMaxF0,
+                                    static_cast<float>(sampleRate_) / kPsolaMinF0);
+        lastPeriod_ = period;
+        // Applied-F0 movement above ~60 cents — note changes, tracker
+        // reseeds, fast portamento — re-anchors the grain grid so the first
+        // grain of the new note starts at a period boundary. Slow drift
+        // (vibrato) only retunes the grid spacing, keeping the marks
+        // phase-locked to the input waveform.
+        const float move = (lastAppliedHz_ > 0.0f && grainGridValid_)
+                               ? std::abs(1200.0f * std::log2(f0 / lastAppliedHz_))
+                               : std::numeric_limits<float>::max();
+        if (move > kReseedCents) psolaResync(period, now);
+        lastAppliedHz_ = f0;
+        gridPeriod_ = period;
+    } else {
+        lastAppliedHz_ = 0.0f;
+        grainGridValid_ = false;
+    }
+
+    // Lay grains whose window start has reached the output position. Each
+    // synthesis mark at s takes its content from the newest analysis mark at
+    // or before s - 1, so the read lag stays inside (0, P + 1] samples —
+    // the entire algorithmic delay of the shifter.
+    if (grainGridValid_ && gridPeriod_ > 0.0f) {
+        const double pOut = static_cast<double>(lastPeriod_) / r;
+        const double nowD = static_cast<double>(now);
+        while (markOut_ - static_cast<double>(lastPeriod_) <= nowD) {
+            while (gridNext_ + static_cast<double>(gridPeriod_) <= markOut_ - 1.0)
+                gridNext_ += gridPeriod_;
+            const Grain g{markOut_, gridNext_, lastPeriod_};
+            if (grainCount_ < kPsolaMaxGrains) {
+                grains_[grainCount_++] = g;
+            } else {
+                int oldest = 0;
+                for (int i = 1; i < grainCount_; ++i)
+                    if (grains_[i].outCenter < grains_[oldest].outCenter) oldest = i;
+                grains_[oldest] = g;
+            }
+            markOut_ += pOut;
+        }
+    }
+
+    float sum = 0.0f;
+    float wsum = 0.0f;
+    int alive = 0;
+    for (int i = 0; i < grainCount_; ++i) {
+        const double off = static_cast<double>(now) - grains_[i].outCenter;
+        const float h = grains_[i].halfLen;
+        if (off <= -static_cast<double>(h) || off >= static_cast<double>(h)) continue;
+        grains_[alive++] = grains_[i];
+        const float w = 0.5f + 0.5f * std::cos(kPi * static_cast<float>(off) / h);
+        sum += w * histAt(grains_[i].inCenter + off);
+        wsum += w;
+    }
+    grainCount_ = alive;
+
+    // Transient guard: a sample jumping past 4x the decaying peak envelope is
+    // an onset. Marks would re-read it for r > 1 (one echo per repeated
+    // analysis mark), so the output routes through the delay-aligned
+    // passthrough for 2.5 periods — one copy, timing preserved. The switch is
+    // instant: a fast slew would still let the first grain emissions leak at
+    // partial amplitude, and the arriving transient masks the route change.
+    const float ax = std::fabs(history_[now & (kHistorySize - 1)]);
+    if (transientHold_ > 0) {
+        --transientHold_;
+    } else if (ax > kTransFloor && ax > kTransRatio * transientEnv_) {
+        transientHold_ = static_cast<int>(kTransHold * lastPeriod_);
+        uvGain_ = 0.0f;
+    }
+    transientEnv_ = std::max(ax, transientEnv_ * kTransDecay);
+
+    // Soft-normalized overlap-add: dividing by (wsum + eps) fades grain tails
+    // in/out smoothly at coverage edges — a hard normalize by wsum would
+    // amplify a just-born grain's tail to full amplitude in one sample.
+    const float psola = sum / (wsum + 0.02f);
+
+    // Unvoiced/edge path: passthrough aligned by half a period so the V/UV
+    // crossfade is coherent with the PSOLA path's ~P/2 average lag.
+    const float pass = delayed(0.5f * lastPeriod_);
+    const float target = (active && transientHold_ <= 0) ? 1.0f : 0.0f;
+    if (transientHold_ <= 0)
+        uvGain_ += uvSlew_ * (target > uvGain_ ? 1.0f : -1.0f);
+    uvGain_ = clampf(uvGain_, 0.0f, 1.0f);
+    return pass + uvGain_ * (psola - pass);
+}
+
+void PitchCorrector::psolaDriveForTest(float appliedHz, float ratio) noexcept {
+    driveHz_ = (appliedHz > 0.0f && ratio > 0.0f) ? appliedHz : 0.0f;
+    driveRatio_ = ratio > 0.0f ? ratio : 1.0f;
 }
 
 void PitchCorrector::updateTarget() noexcept {
@@ -517,7 +645,7 @@ void PitchCorrector::process(const float* input, float* output, int frames, int 
             updateTarget();
         }
         smoothedRatio_ += alpha * (lastTargetRatio_ - smoothedRatio_);
-        const float processed = amount < 0.001f ? in : shift(smoothedRatio_);
+        const float processed = amount < 0.001f ? in : psolaShift(smoothedRatio_);
         const float revA = echoA_[reverbIndexA_];
         const float revB = echoB_[reverbIndexB_];
         echoA_[reverbIndexA_] = processed + revA * 0.32f;
