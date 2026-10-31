@@ -107,8 +107,10 @@ per-component exported/launcher/effective flags, application flag dump
   (but inside the `1.25× + 0.01` hard gate) prints a nonblocking warning
   with amplitude, clip, and timestamp — diagnostic only, never a failure.
 - **`d5_listening_pack`** renders the randomized A/B blind-listening pack
-  (`docs/corpus/listening_pack/`, key at `listening_key.csv`) for the
-  ≥3-person human smoke test.
+  (`docs/corpus/listening_pack/`) for the ≥3-person human smoke test.
+  Since D8 the role key is **private**: `docs/corpus/listening_key_v2.csv`
+  is gitignored and must not be committed before ratings are frozen (the
+  old v1 key is public in git history and void).
 - **Skip discipline**: absent or empty `manifest.jsonl` → every battery
   prints `SKIP — corpus absent (0 clips)`, binaries exit 0, and the step
   emits a `::notice::`. A present-but-corrupt corpus (malformed manifest

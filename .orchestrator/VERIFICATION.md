@@ -201,3 +201,10 @@ Gate 20 — D7 landing verification (2026-10-31, Hermes-verified):
 - Scope check: git show --stat = exactly 4 files (d5_measure.h +71, test_d5_realvoice.cpp +509, CI_GATES.md +3, D7_CHANGES.md new 201). No corpus/listening/engine/CI-workflow changes.
 - D7_CHANGES.md read in full: e=0/361 (no engine defect), b=219/361 dominant, coverage 87.32→86.03 with old-vs-new trace probe (267 lost/56 gained fully attributed), M=237 → 233 tentative holds + 4 hard drops (1 = old phantom removal, correct; 1 = genuine 1-hop miss, report-only), R4 warn band documented with 0/432 in band.
 - Orchestration lesson recorded: Devin's msys64 toolchain silently failed under Git Bash PATH shadowing (libisl-23/libmpc-3/libmpfr-6 resolved from the wrong mingw64); Devin diagnosed and worked around it itself (prepend C:/msys64/mingw64/bin).
+
+
+Gate 21 — D8 landing verification (2026-10-31, Hermes-verified):
+- Commit `69bf645`; CI run `41212546946` GREEN both jobs (gh run list). Devin's full suite 10/10 verified in-log; local re-verify covered by the same run discipline.
+- Key privacy verified independently: `git check-ignore docs/corpus/listening_key_v2.csv` → ignored; `git status --porcelain` clean after the generator run; pack dir 20 WAVs gitignored. Old key removed from HEAD via git rm (history preserved — new randomization renders it useless).
+- Pack composition verified in-log: 8 main pairs 2/singer × (1 long_tones + 1 scales) + 2 A/A controls (1 scales + 1 long_tones), controls byte-identical (SHA256), no clip overlap main vs control, mixed A/B roles.
+- Devin-flagged out-of-scope item resolved by orchestrator: CI_GATES.md key-path reference updated to v2-private in this commit.
