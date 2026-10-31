@@ -16,7 +16,13 @@ android {
 
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild {
-            cmake { cppFlags += listOf("-std=c++17", "-O3", "-ffp-contract=fast") }
+            cmake {
+                cppFlags += listOf("-std=c++17", "-O3", "-ffp-contract=fast")
+                // Prefab CXX1212: Oboe AAR is built with the shared STL; the app must
+                // match it (default would be c++_static). libc++_shared.so is bundled
+                // automatically by AGP for both ABIs.
+                arguments += listOf("-DANDROID_STL=c++_shared")
+            }
         }
     }
 

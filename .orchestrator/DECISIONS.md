@@ -69,6 +69,12 @@ Why Hermes, not Devin (§9 mechanical boundary): 2-line URL substitution, zero l
 Also: `.gitignore` += `gradle/wrapper/gradle-wrapper.jar` (design is a bootstrap downloader; the jar must never be committed — local test had produced an untracked jar artifact).
 Verification gates: local ensure-wrapper.ps1 run PASSED (real download+checksum); remote gate = CI run on the fix commit (verdict recorded in VERIFICATION.md Gate 11).
 
+D-010 — Hermes mechanical fix: Prefab CXX1212 STL mismatch (app/build.gradle.kts) (2026-10-31)
+Failure evidence (remote, run 41177443204): wrapper bootstrap PASSED (curl 404 gone; build reached CMake configure 58s in), then `Task :app:configureCMakeDebug[arm64-v8a] FAILED` — `com.google.prefab.api.NoMatchingLibraryException: No compatible library found for //oboe/oboe … [CXX1212] User is using a static STL but library requires a shared STL`. native-dsp still success.
+Root cause (Hermes-verified): `app/build.gradle.kts` sets NO `-DANDROID_STL` → NDK default `c++_static`; the Google-Maven Oboe AAR (Prefab) ships compiled against the shared STL → Prefab hard-rejects the combination. Canonical fix: `arguments += listOf("-DANDROID_STL=c++_shared")` (comment in file). Consequence documented: `libc++_shared.so` is bundled automatically by AGP for both ABIs (arm64-v8a, x86_64); Oboe 1.11.0 and NDK r27+ libc++_shared support 16 KB page alignment (gate #22 still pending APK-level verification).
+Why Hermes, not Devin (§9 mechanical boundary): 1-argument build-config addition forced unambiguously by the CXX1212 error; DSP/business logic untouched; local Android build impossible on this host (no SDK), so the only verification available is the remote CI — same discipline as D-009.
+Verification gates: kts syntax trivial (Kotlin DSL `arguments += listOf(...)`); remote gate = CI run on the fix commit (verdict recorded in VERIFICATION.md Gate 11). Cascade so far: license hang → wrapper 404 → STL mismatch → (next unknown). Each fix is verified by the NEXT run getting further; the PASS gate remains assembleDebug + APK artifact.
+
 ---
 
 Audit Trail Integrity Check (per `references/autonomy-directive.md` — verified 2026-10-29)
