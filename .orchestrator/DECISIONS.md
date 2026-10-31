@@ -156,3 +156,9 @@ D-017 — Round-5 verdict execution plan (2026-10-31, per GPT verdict in `docs/o
 - D7 (next Devin dispatch): R1 residual-window diagnosis (output F0 vs instantaneous targetHz + annotation, worst windows per singer, per-cause table — no engine changes unless a reproduced defect) + detector-coverage classification (86.0% → silence/transition/breath/missed, per singer + context; synthetic 97.8% never substituted) + R4 >1.10× nonblocking warning (hard gate stays 1.25×+0.01).
 - D8 (after D7): blind pack redesign — 2 pairs/singer (1 long-tone + 1 scales) + 2 hidden A/A controls, fresh private randomization, key written to a gitignored local path only (NEVER committed before ratings frozen; old public key already in git history so the new pack must use a different order). 3-person listening stays BLOCKED_HUMAN.
 - G3 Compose implementation remains gated on the listening smoke PASS; G3 architecture prep + G1 device-test prep may proceed in parallel. Corpus expansion for G4 (≥8 singers, ≥40 clips, vibrato/falsetto/breathy + coverage) planned as a Hermes-owned data task.
+
+
+D-018 — Listening-panel plan + G1 device-test scheduling (2026-10-31, owner via clarify):
+- Listening panel: owner listens FIRST (their session is 1 of the 3 required raters), the other 2 listeners are recruited by the owner afterwards. Gate stays BLOCKED_HUMAN until all 3 ratings are frozen; the v2 key stays gitignored until then.
+- G1 (Samsung device tests): owner says the device is available THIS WEEK. Hermes prepares the device-test package (debug APK from main + DC-003 REV2 diagnostic-loopback protocol + evidence checklist) so the owner can run it.
+- Trademark decision (owner): still pending — Antares AUTOTUNE word mark serial 99040050 NOTICE OF ALLOWANCE 2026-05-12, extension deadline 2026-11-12, class 9 (evidence in docs/THIRD_PARTY.md). Owner decision required before any store listing; `D-Vocal Tune` is the documented safer alternative. Non-blocking until store listing.
