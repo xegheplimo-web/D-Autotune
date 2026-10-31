@@ -43,6 +43,7 @@ class MainActivity : Activity() {
     private var reverb = 0f
     private var running = false
     private var callbacksRegistered = false
+    private var streamLine = ""
 
     private val routeCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
@@ -56,10 +57,14 @@ class MainActivity : Activity() {
                 pitchValue.text = if (s[3] > 0) "%.1f Hz".format(Locale.US, s[0]) else "—"
                 targetValue.text = if (s[3] > 0) "%.1f Hz".format(Locale.US, s[1]) else "—"
                 correctionValue.text = if (s[3] > 0) "%+.0f cents".format(Locale.US, s[2]) else "—"
-                val algoMs = "%.1f".format(Locale.US, s[9])
+                val retuneMs = "%.0f".format(Locale.US, s[9])
                 val cbMaxMs = "%.2f".format(Locale.US, s[10])
                 val cbAvgMs = "%.2f".format(Locale.US, s[11])
-                telemetry.text = "${s[4].toInt()} Hz  ·  thiếu ${s[5].toLong()} frames  ·  DSP ${s[6].toLong()} frames  ·  xrun ${s[8].toLong()}  ·  trễ ~$algoMs ms  ·  cb $cbMaxMs/$cbAvgMs ms"
+                val cbP99Ms = "%.2f".format(Locale.US, s[12])
+                val xrunText = if (s[13] > 0.5) "xruns=${s[8].toLong()} (valid)" else "xruns unsupported"
+                val missRate = "%.1f".format(Locale.US, s[14])
+                val shortRate = "%.1f".format(Locale.US, s[15])
+                telemetry.text = "${s[4].toInt()} Hz  ·  thiếu ${s[5].toLong()} fr ($missRate/s)  ·  DSP ${s[6].toLong()} fr  ·  $xrunText  ·  input-short $shortRate/s  ·  retune $retuneMs ms (control)  ·  cb $cbMaxMs/$cbAvgMs/$cbP99Ms ms\n$streamLine"
                 if (s[7] < 0.5) stopAudio("Audio engine đã dừng")
                 else mainHandler.postDelayed(this, 250)
             }
@@ -204,6 +209,13 @@ class MainActivity : Activity() {
         NativeAudio.configure(root.selectedItemPosition, scale.selectedItemPosition, amount, speedMs, reverb)
     }
 
+    private fun formatStreamInfo(si: IntArray): String {
+        if (si.size < 10 || si[0] <= 0) return "stream info n/a"
+        fun sharing(m: Int) = if (m == 1) "Exclusive" else "Shared"
+        fun perf(m: Int) = when (m) { 0 -> "LowLat"; 1 -> "PowerSave"; else -> "other" }
+        return "out ${si[0]} Hz ${si[1]}cap/${si[2]}burst ${sharing(si[3])}·${perf(si[4])}  ·  in ${si[5]} Hz ${si[6]}cap/${si[7]}burst ${sharing(si[8])}·${perf(si[9])}"
+    }
+
     private fun hasWiredOutput(): Boolean = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
         it.type in setOf(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
             AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_ACCESSORY)
@@ -222,6 +234,7 @@ class MainActivity : Activity() {
         configure()
         running = NativeAudio.start()
         if (running) {
+            streamLine = formatStreamInfo(NativeAudio.getStreamInfo())
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             startButton.text = "DỪNG LIVE AUTOTUNE"
             status.text = "ĐANG XỬ LÝ · bắt đầu với âm lượng thấp"
