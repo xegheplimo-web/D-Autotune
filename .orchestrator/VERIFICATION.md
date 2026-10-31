@@ -139,6 +139,20 @@ Gate 16 — G2-D3 clean-room TD-PSOLA shifter (VERIFIED GREEN — commit `8ee839
 - Honest deviations (Devin report + CI): F1/F0 move 610 ¢ < the 3× floor's raw threshold at 120 Hz rows (impulse centroid −1, excess under floor) — documented, onset carries the delay measurement; wall-clock ±3 µs jitter, all DSP numbers bit-identical.
 - Sequencing: dispatched ~16:47 after D2-EXT landed (same repo, no commit race — Devin synced on 70b1147).
 
+Gate 17 — G2-D4 end-to-end host verification (VERIFIED GREEN — commits `80adfd6` + `2fa679e`, runs 41194634866 + 41194792144, 2026-10-31 17:5x local):
+- Scope check (Hermes-verified `git diff --stat 2634c29..2fa679e`): exactly 5 card files — test_d4_e2e.cpp (+1044 NEW), d2_reference.cpp (+539 NEW), d2_reference.h (+127 NEW), D4_CHANGES.md (+199), CMakeLists.txt (+12). PitchCorrector.cpp/.h byte-identical before/after (SHA256 ba78ed0b…/f0beab77… both sides — production untouched).
+- **d2_reference fidelity** (Hermes-verified by diff): verbatim D2-era PitchCorrector (70b1147) with only 3 mechanical hunks — include rename, `namespace d2ref {`, closing-comment. The A/B baseline is honest.
+- **7/7 ctest green** (adds d4_e2e, 1.11 s). D1 floor identical: det 97.8 / med 0.2 / p95 14.5 / oct 0.00 / VUV 97.7 (7563 chunks).
+- **D4 batteries ALL PASS × both rates** (48k + 44.1k, same inputs, seed, chunk 512, reverb=0 except battery F):
+  - A. pitch accuracy full-chain: NEW worst 0.61 ¢ @48k / 0.23 ¢ @44.1k; OLD 1.61/0.74 — both within 3 ¢; amount=0 bypass bit-exact on both chains; octave_trap stays in-octave on both.
+  - B. formant retention: full-chain +90 ¢ shift (186→196 Hz): NEW s* 0.990 (formants held), OLD dragged 1.022 @48k / pumping-corrupted at 44.1k (resid 5.06 vs NEW 0.93 — old's phase-wrap artifact). OLD F1 dev up to 128 Hz vs NEW ≤45 Hz. Driven +500 ¢ shifter-only: PSOLA F1 667–669 (D3 parity), legacy 880/589 — moves with pitch.
+  - C. artifacts: staccato boundaries not amplified (both chains); sustained 2.2 s glitch-free; transients: NEW spike emitted once vs OLD 15 excess excursions @44.1k (phase-wrap pumping); overshoot < 6 dB both.
+  - D. DSP delay: NEW 2.27 ms (109/100 samp) vs OLD 18.67 ms @48k / 20.32 ms @44.1k — deterministic across 2 runs, both ≤ budget.
+  - E. callback cost: NEW p95 19.0 µs @48k / 18.8 @44.1k vs OLD 10.8/10.6 — ~1.8× WORSE but deep inside the 200 µs budget (≈10× chunk headroom).
+  - F. reverb-on (0.15): both chains deterministic, finite, inside limiter ceiling.
+- **A/B verdict table (round-3 rule)**: pitch SAME (both <3 ¢), formants BETTER, artifacts BETTER, delay BETTER (9×), callback cost WORSE-but-in-budget. Round-3 rule satisfied: no gate regresses without compensating benefit.
+- G2 DSP chain D0→D4 COMPLETE. Next: GPT round-4 consultation (D-014 prereqs now present) before G3 (UX) / real-voice corpus work.
+
 ---
 
 Updated verification status:
