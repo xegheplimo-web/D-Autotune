@@ -188,12 +188,6 @@ double maxStep(const std::vector<float>& y, std::size_t a, std::size_t b) {
     return m;
 }
 
-double rms(const std::vector<float>& y, std::size_t a, std::size_t b) {
-    double s = 0.0;
-    for (std::size_t i = a; i < b && i < y.size(); ++i) s += static_cast<double>(y[i]) * y[i];
-    return std::sqrt(s / std::max<std::size_t>(1, b - a));
-}
-
 // Runs the full chain in kChunk frames; returns interleaved stereo.
 template <class DSP>
 std::vector<float> runDsp(DSP& dsp, const std::vector<float>& sig,
