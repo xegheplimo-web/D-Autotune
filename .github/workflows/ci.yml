@@ -32,8 +32,9 @@ jobs:
       # (124) instead of hanging until the 6h job timeout.
       # sdk_pipe() classifies pipeline exit codes via PIPESTATUS instead of
       # `|| true` (GPT round-2: masked real sdkmanager failures). `yes` dying
-      # with SIGPIPE (141) once sdkmanager closes stdin is expected and
-      # benign; only the sdkmanager/timeout exit decides the verdict.
+      # once sdkmanager closes stdin — SIGPIPE (141) or coreutils' EPIPE
+      # diagnostic (1) — is expected and benign; only the sdkmanager/timeout
+      # exit decides the verdict.
       - name: Install Android components
         timeout-minutes: 15
         run: |
@@ -66,8 +67,10 @@ jobs:
                 echo "::error::$label failed (sdkmanager exit $sdk_rc)"
                 tail -n 20 "$log"; exit 1 ;;
             esac
-            if [ "$yes_rc" != 0 ] && [ "$yes_rc" != 141 ]; then
-              echo "::warning::$label: yes exited $yes_rc (expected 0 or SIGPIPE=141)"
+            # yes terminating on the closed pipe is expected either way:
+            # 141 (SIGPIPE) or 1 (coreutils EPIPE diagnostic, stderr -> null).
+            if [ "$yes_rc" != 0 ] && [ "$yes_rc" != 1 ] && [ "$yes_rc" != 141 ]; then
+              echo "::warning::$label: yes exited $yes_rc (expected 0, 1 or 141)"
             fi
             if [ "$tee_rc" != 0 ]; then
               echo "::error::$label: log capture failed (tee exit $tee_rc)"

@@ -15,7 +15,7 @@ two sides):
 | `PIPESTATUS[1]` = 0 | sdkmanager exited cleanly | OK |
 | `PIPESTATUS[1]` = 124/137/143 | `timeout` fired or process killed | FAIL step |
 | `PIPESTATUS[1]` = other non-zero | real sdkmanager error | FAIL step |
-| `PIPESTATUS[0]` = 141 | `yes` SIGPIPE when sdkmanager closed stdin | expected, warning only if ≠ 0/141 |
+| `PIPESTATUS[0]` = 141 or 1 | `yes` terminated on the closed pipe — SIGPIPE or coreutils EPIPE diagnostic (Ubuntu coreutils `yes` exits 1) | expected, warning only if ∉ {0,1,141} |
 | `PIPESTATUS[2]` ≠ 0 | `tee`/log capture failed | FAIL step |
 
 Evidence printed: the per-stage `yes/sdkmanager/tee` exit codes plus the
