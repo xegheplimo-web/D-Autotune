@@ -76,6 +76,14 @@ DC-002 verification (latency/xrun instrumentation, commit `db65a0f`, run 4117925
 - APK re-verification (downloaded from run 41179251125): 16 KB PT_LOAD alignment PASS for all 6 .so (0x4000 × every segment, both ABIs); permission gate PASS (exactly 1 permission: RECORD_AUDIO).
 - RUNS.jsonl: rows for the full cascade + DC-002 attempt 1 (died) + attempt 2 (green).
 
+DC-002A verification (measurement semantics fix, commits `615bf8a` + `a58bcd6`, runs 41181595093 FAIL → 41181759477 GREEN, 2026-10-31 14:5x local):
+- GPT round-2 REQUIRED DC-002A before any G1 evidence (D-012): `algoLatencyMs = kChunk·1000/sr + retuneMs` REJECTED — retuneMs is a control-smoothing constant, not signal delay; true delay = (F_input − F_output)·(1/f_s), measured by delta of stream frame positions, never inferred from constants.
+- Commit 1 `615bf8a` (Hermes mechanical per §9): snapshot 12→16 slots — slot 9 now `retuneMs` honestly labeled "control"; NEW slots 12-15: `cbP99Ms` (16-bucket histogram, 2 ms buckets, single-writer relaxed atomics, no allocation), `xrunValid` (1 = counted via XRunCount, 0 = API unsupported → UI shows "n/a" instead of lying), `missFrames` rate/s (output builder: (frames−buffered)/Δt), `shortRead` rate/s (input: (inFrames−inBuffered)/Δt); `getXRunCount()` read moved OUT of the audio callback into `snapshot()` (UI thread under controlMute_ — was a lock-free API call inside RT: unnecessary RT cost). Delta-rate fields computed as (cur−prev)/Δt inside snapshot, no callback changes beyond removal of the XRunCount call. Kotlin: 16-slot labels (retune labeled "control", xrun "n/a" when xrunValid=0), `getStreamInfo()` external JNI (returns granted properties — sr, bufCap, bufSz, perfMode, sharing EXCLUSIVE/SHARED/UNSPECIFIED as 0/1/2); MainActivity displays actual granted properties + `si[0] <= 0` → "stream info n/a".
+- Run 41181595093 @ `615bf8a`: android FAIL — `mutable` read in `XRunCount()` breaks C++ const-correctness on the out-stream pointer (`xruns_ += out_->XRunCount()` on a const AudioEngine member). Real compile error, caught by CI as designed.
+- Commit 2 `a58bcd6` (Hermes mechanical: const-pointer made non-const field `OboeStream* out_` + `in_`, per one-arg mechanical-boundary rule): run 41181759477 — **BOTH jobs GREEN**.
+- APK re-verification (downloaded from run 41181759477, python ELF parser + AXML): 16 KB PT_LOAD alignment PASS — all 6 .so × both ABIs at 0x4000; permission gate PASS — exactly 1 permission (RECORD_AUDIO); debuggable=true expected (debug variant, unsigned release pipeline later).
+- Honest semantics: NOTHING in the engine now claims algorithm latency. The UI shows: retuneMs labeled "control", callback p99/max/avg, xruns (with validity flag), delta-rate missing/short-read stats, granted stream properties. True signal delay is ONLY obtainable from the G1 loopback measurement (revised DC-003 design, pending hardware).
+
 ---
 
 Updated verification status:
