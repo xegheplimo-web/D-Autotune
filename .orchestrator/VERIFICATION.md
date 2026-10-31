@@ -193,3 +193,11 @@ Gate 19 — GPT round-5 consultation + verdict (2026-10-31, Hermes-verified):
 - GPT independently verified the repo at `5e381ee` and CI runs 41206064557 + 41207486610 (both SUCCESS), reviewed D6_CHANGES.md, R1–R5 numbers, and the listening pack generator. Verdict: **D6 ACCEPTED / OBJECTIVE VOCAL GATES PASS / HUMAN LISTENING PENDING / G3 CONDITIONAL GO**.
 - GPT-caught defects (independent, before we flagged): listening_key.csv committed publicly + pair skew f1 5/f3 1/m1 1/m3 1 → pack redesign ordered with PRIVATE key; R1's 28–67¢ p95 attribution rejected as unevidenced (out-vs-snap uses segment-median internal target) → R1 residual-window diagnosis ordered as D7 first item; detector coverage 87.3%→86.0% must be recorded and classified.
 - Archive: `docs/orchestration/gpt_round5_reply.md`. Raw capture: cards dir `gpt_round5_reply_raw.txt`.
+
+
+Gate 20 — D7 landing verification (2026-10-31, Hermes-verified):
+- Commit `96cdd07` on main; CI run `41211475193` GREEN both jobs (checked via gh run list). Local re-verify: 10/10 ctest PASS via scripts/test-dsp-windows.ps1 (real corpus, 20.48s total; d5_realvoice 13.57s).
+- Engine byte-frozen: PitchCorrector.cpp/.h SHA-256 0d11c146…/c1afc18… identical to D6 landing — verified by orchestrator with sha256sum (D7 is diagnosis-only; Devin's claim confirmed).
+- Scope check: git show --stat = exactly 4 files (d5_measure.h +71, test_d5_realvoice.cpp +509, CI_GATES.md +3, D7_CHANGES.md new 201). No corpus/listening/engine/CI-workflow changes.
+- D7_CHANGES.md read in full: e=0/361 (no engine defect), b=219/361 dominant, coverage 87.32→86.03 with old-vs-new trace probe (267 lost/56 gained fully attributed), M=237 → 233 tentative holds + 4 hard drops (1 = old phantom removal, correct; 1 = genuine 1-hop miss, report-only), R4 warn band documented with 0/432 in band.
+- Orchestration lesson recorded: Devin's msys64 toolchain silently failed under Git Bash PATH shadowing (libisl-23/libmpc-3/libmpfr-6 resolved from the wrong mingw64); Devin diagnosed and worked around it itself (prepend C:/msys64/mingw64/bin).
