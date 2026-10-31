@@ -7,9 +7,10 @@ detector (`detect()`, all three passes, armed gate, extrapolator) and the
 shifter (`shift()`, `delayed()`, echo, reverb, `phase_`, the `process()`
 sample loop) are byte-identical — verified by `git diff` hunk boundaries:
 the only hunks touch `reset()` initialization and the `updateTarget()`
-region. All numbers below are from the `d2_tracking` POST_BUILD step plus a
-fresh `d0_baseline`/`d1_improvement` run in the same binary (MSYS2 GCC
-`-O2`; CI numbers filled in after the run lands).
+region. All numbers below are from CI run `41187660379`, `native-dsp` job
+(ubuntu-latest, GCC `-O2`), printed by the `d2_tracking` POST_BUILD step
+and the `d0_baseline`/`d1_improvement` harnesses in the same binary; the
+local MSYS2 build produced identical values.
 
 ## Result — headline
 
@@ -135,11 +136,11 @@ jump acceptance replacing the 1-frame unvoiced dropout on note changes.
 |                               |      |  after the 4-update hold bound, never latches
 ```
 
-## Same-corpus regression check (d0_baseline + d1_improvement, this binary)
+## Same-corpus regression check (d0_baseline + d1_improvement, CI run 41187660379)
 
 ```
 d0_baseline grand total (D2 code):
-  det=97.8% med=0.2c p95=14.5c oct=0.00% vuv=97.7%
+  det=97.8% med=0.2c p95=14.5c oct=0.00% vuv=97.7% call med=14.7us p95=57.1us
 confusion @48000: tvEv=3806 tvEu=83 tuEv=6 tuEu=47   (D1 was 3803/86/6/47)
 confusion @44100: tvEv=3496 tvEu=77 tuEv=6 tuEu=42   (D1 was 3496/77/6/42)
 
