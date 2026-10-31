@@ -74,4 +74,36 @@ target_include_directories(test_ping_math PRIVATE ../app/src/main/cpp)
 target_compile_features(test_ping_math PRIVATE cxx_std_17)
 target_compile_options(test_ping_math PRIVATE -O2 -Wall -Wextra -Wpedantic)
 add_test(NAME ping_math COMMAND test_ping_math)
+# D5: real-voice validation harness (card G2-D5, GPT round-4 D-015).
+# d5_harness = machinery unit tests on synthetic fixtures (always runs).
+# d5_realvoice = R1-R5 batteries on docs/corpus/manifest.jsonl; SKIP-loud
+# when the corpus is absent (corpus lands after the harness, orchestrator).
+# d5_listening_pack = randomized A/B WAV pack + committed key for the
+# BLOCKED_HUMAN 3-person blind test; same skip discipline.
+set(D5_CORPUS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../docs/corpus")
+add_executable(d5_harness test_d5_harness.cpp corpus_loader.cpp sha256.cpp
+               corpus_gen.cpp metrics.cpp ../app/src/main/cpp/PitchCorrector.cpp)
+target_include_directories(d5_harness PRIVATE ../app/src/main/cpp ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(d5_harness PRIVATE cxx_std_17)
+target_compile_options(d5_harness PRIVATE -O2 -Wall -Wextra -Wpedantic)
+add_test(NAME d5_harness COMMAND d5_harness)
+add_executable(d5_realvoice test_d5_realvoice.cpp corpus_loader.cpp sha256.cpp
+               corpus_gen.cpp metrics.cpp ../app/src/main/cpp/PitchCorrector.cpp)
+target_include_directories(d5_realvoice PRIVATE ../app/src/main/cpp ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(d5_realvoice PRIVATE cxx_std_17)
+target_compile_options(d5_realvoice PRIVATE -O2 -Wall -Wextra -Wpedantic)
+target_compile_definitions(d5_realvoice PRIVATE D5_CORPUS_DIR="${D5_CORPUS_DIR}")
+add_test(NAME d5_realvoice COMMAND d5_realvoice)
+# Same trick as d0: ctest hides passing output; the SKIP/real table must
+# reach the CI build log for docs/baseline/D5_CHANGES.md.
+add_custom_command(TARGET d5_realvoice POST_BUILD
+                   COMMAND d5_realvoice
+                   COMMENT "D5 real-voice batteries report (SKIP until corpus lands)")
+add_executable(d5_listening_pack d5_listening_pack.cpp corpus_loader.cpp sha256.cpp
+               corpus_gen.cpp metrics.cpp ../app/src/main/cpp/PitchCorrector.cpp)
+target_include_directories(d5_listening_pack PRIVATE ../app/src/main/cpp ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(d5_listening_pack PRIVATE cxx_std_17)
+target_compile_options(d5_listening_pack PRIVATE -O2 -Wall -Wextra -Wpedantic)
+target_compile_definitions(d5_listening_pack PRIVATE D5_CORPUS_DIR="${D5_CORPUS_DIR}")
+add_test(NAME d5_listening_pack COMMAND d5_listening_pack)
 

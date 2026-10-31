@@ -90,6 +90,29 @@ per-component exported/launcher/effective flags, application flag dump
 (`allowBackup`, `usesCleartextTraffic`, `extractNativeLibs`,
 `supportsRtl`), then `RESULT: PASS/FAIL`.
 
+## 7. `Real-voice corpus gate (D5)` — real-voice evidence, skip-loud
+
+`ctest -R 'd5_realvoice|d5_listening_pack'` inside the `native-dsp` job.
+
+- **`d5_realvoice`** runs batteries R1–R5 on the committed singing corpus
+  (`docs/corpus/manifest.jsonl`, schema in `docs/corpus/README.md`):
+  output-F0 vs annotated reference + correction ratio (R1), F1/F2 formant
+  retention vs input at ±60 Hz (R2), envelope pumping on ≥0.5 s
+  `long_tones` segments (R3 — prints the D6 trigger when input-corrected
+  pump excess > 3 dB), boundary/sustained artifacts (R4), and
+  impulse-centroid DSP delay per corpus rate (R5, D4 class 2.27–4.17 ms).
+- **`d5_listening_pack`** renders the randomized A/B blind-listening pack
+  (`docs/corpus/listening_pack/`, key at `listening_key.csv`) for the
+  ≥3-person human smoke test.
+- **Skip discipline**: absent or empty `manifest.jsonl` → every battery
+  prints `SKIP — corpus absent (0 clips)`, binaries exit 0, and the step
+  emits a `::notice::`. A present-but-corrupt corpus (malformed manifest
+  line, SHA-256 mismatch, non-schema WAV, >15 s clip, bad annotation)
+  fails the binary — real evidence must not silently degrade to a skip.
+- `d5_harness` (synthetic fixtures, always runs) is covered by the main
+  `ctest` step above; it validates the loader/metric machinery, never the
+  voices.
+
 ## Known gaps (out of scope for CI-H)
 
 - **Runtime gate does not exist yet.** Installing the APK on a 16 KiB
