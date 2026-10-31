@@ -21,4 +21,15 @@ add_test(NAME d0_baseline COMMAND d0_baseline)
 add_custom_command(TARGET d0_baseline POST_BUILD
                    COMMAND d0_baseline
                    COMMENT "D0 baseline report")
+# D1: frozen D0 reference detector + live A/B comparison on the same corpus.
+add_executable(d1_improvement test_d1_improvement.cpp corpus_gen.cpp metrics.cpp
+               d0_reference.cpp ../app/src/main/cpp/PitchCorrector.cpp)
+target_include_directories(d1_improvement PRIVATE ../app/src/main/cpp ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(d1_improvement PRIVATE cxx_std_17)
+target_compile_options(d1_improvement PRIVATE -O2 -Wall -Wextra -Wpedantic)
+add_test(NAME d1_improvement COMMAND d1_improvement)
+# Same trick as d0_baseline: the D0-vs-D1 table must reach the CI build log.
+add_custom_command(TARGET d1_improvement POST_BUILD
+                   COMMAND d1_improvement
+                   COMMENT "D1 vs D0 improvement report")
 

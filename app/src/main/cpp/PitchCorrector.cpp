@@ -12,6 +12,51 @@ constexpr float kA4 = 440.0f;
 int mod12(int n) noexcept { return (n % 12 + 12) % 12; }
 float clampf(float x, float lo, float hi) noexcept { return std::max(lo, std::min(hi, x)); }
 float fract(float x) noexcept { return x - std::floor(x); }
+
+// D1: one YIN-style cumulative-mean-normalized-difference scan (written
+// clean-room from the algorithm description). `x` points at a contiguous
+// region of decimated samples; the region must extend at least
+// compare + maxLag elements. Returns the lag of the FIRST local CMND trough
+// entered after cmnd < tEnter (lag >= minLag), or 0 if none. Fills
+// norm[1..maxLag] with the CMND values (norm[0] = 1).
+int yinTrough(const float* x, int compare, int minLag, int maxLag,
+              float tEnter, float* norm) noexcept {
+    float running = 0.0f;
+    float previous = 1.0f;
+    bool entered = false;
+    norm[0] = 1.0f;
+    for (int lag = 1; lag <= maxLag; ++lag) {
+        float difference = 0.0f;
+        for (int i = 0; i < compare; ++i) {
+            const float d = x[i] - x[i + lag];
+            difference += d * d;
+        }
+        running += difference;
+        const float cmnd = running > 1e-9f ? difference * static_cast<float>(lag) / running
+                                           : 1.0f;
+        norm[lag] = cmnd;
+        if (!entered && lag >= minLag && cmnd < tEnter) entered = true;
+        // First local trough, not the global minimum (octave protection).
+        if (entered && lag > minLag && cmnd > previous) return lag - 1;
+        previous = cmnd;
+    }
+    return 0;
+}
+
+// Parabolic interpolation of the lag around a CMND trough.
+float refineLag(const float* norm, int lag, int minLag, int maxLag) noexcept {
+    float refined = static_cast<float>(lag);
+    if (lag > minLag && lag < maxLag) {
+        const float left = norm[lag - 1];
+        const float middle = norm[lag];
+        const float right = norm[lag + 1];
+        const float denominator = left - 2.0f * middle + right;
+        if (std::abs(denominator) > 1e-6f) {
+            refined += clampf(0.5f * (left - right) / denominator, -0.5f, 0.5f);
+        }
+    }
+    return refined;
+}
 }  // namespace
 
 PitchCorrector::PitchCorrector(int sampleRate) { reset(sampleRate); }
@@ -31,6 +76,9 @@ void PitchCorrector::reset(int sampleRate) noexcept {
     lastFrequencyHz_ = 0.0f;
     lastTargetHz_ = 0.0f;
     stableCount_ = 0;
+    recentE_.fill(1e30f);
+    recentIdx_ = 0;
+    armedLeft_ = 0;
     detectedHz_.store(0.0f);
     targetHz_.store(0.0f);
     cents_.store(0.0f);
@@ -66,8 +114,22 @@ float PitchCorrector::nearestScaleFrequency(float hz, int root, int scale) noexc
     return kA4 * std::pow(2.0f, (bestNote - 69.0f) / 12.0f);
 }
 
-PitchResult PitchCorrector::detect() const noexcept {
+PitchCorrector::DetOut PitchCorrector::detect() noexcept {
     constexpr int kCompare = 256;
+    // Pass A (fresh window): only the newest kShortLen decimated samples are
+    // analysed, so the estimate's effective center sits much closer to "now"
+    // than the full-window pass (tracking-lag reduction). Thresholds are
+    // deeper than the long window's and the result is treated as provisional:
+    // updateTarget confirms it before reporting.
+    constexpr int kShortCompare = 128;
+    constexpr int kShortLen = 288;                      // 288*4 = 1152 native ~24ms @48k
+    constexpr int kShortBase = kDetectWindow - kShortLen; // tail of the buffer
+    // Relaxed fallback thresholds (pass C): reached only when the strict scan
+    // fails — i.e. when periodicity is buried. Reporting is confirm-gated.
+    constexpr float kTenterRelax = 0.35f;
+    constexpr float kTacceptRelax = 0.55f;
+
+    DetOut out;
     std::array<float, kDetectWindow> samples{};
     float squared = 0.0f;
     const std::uint64_t first = totalSamples_ - kDetectWindow * kDownsample;
@@ -77,49 +139,128 @@ PitchResult PitchCorrector::detect() const noexcept {
         samples[i] = s;
         squared += s * s;
     }
-    if (squared / static_cast<float>(kDetectWindow) < 0.000040f) return {};
+    const float energy = squared / static_cast<float>(kDetectWindow);
+
+    // Energy-rise "armed" tracker: recentE_ holds the per-update window
+    // energies of the last ~85ms; its minimum is a running noise-floor proxy.
+    // A >= 3x jump over that floor opens a ~64ms window in which a confident
+    // estimate may voice immediately (faster voiced onsets). Updated on every
+    // detection update, including silent frames, so a silence->voice edge arms.
+    float recentMin = recentE_[0];
+    for (const float v : recentE_) recentMin = std::min(recentMin, v);
+    if (armedLeft_ > 0) --armedLeft_;
+    if (recentMin < 1e29f && energy > 3.0f * recentMin) armedLeft_ = 6;
+    recentE_[recentIdx_] = energy;
+    recentIdx_ = (recentIdx_ + 1) & 7;
+
+    if (energy < 0.000040f) return out;
 
     const float reducedRate = static_cast<float>(sampleRate_) / kDownsample;
     const int minLag = std::max(2, static_cast<int>(reducedRate / 1000.0f));
     const int maxLag = std::min(200, static_cast<int>(reducedRate / 80.0f));
-    float running = 0.0f;
-    int bestLag = 0;
-    float previous = 1.0f;
-    bool enteredTrough = false;
     std::array<float, 201> norm{};
-    norm[0] = 1.0f;
-    for (int lag = 1; lag <= maxLag; ++lag) {
-        float difference = 0.0f;
-        for (int i = 0; i < kCompare; ++i) {
-            const float d = samples[i] - samples[i + lag];
-            difference += d * d;
-        }
-        running += difference;
-        const float cmnd = running > 1e-9f ? difference * lag / running : 1.0f;
-        norm[lag] = cmnd;
-        if (lag >= minLag && cmnd < 0.16f && !enteredTrough) enteredTrough = true;
-        // Select the FIRST local trough, not the global minimum (which can be an octave below).
-        if (enteredTrough && lag > minLag && cmnd > previous) {
-            bestLag = lag - 1;
-            break;
-        }
-        previous = cmnd;
-    }
-    if (!enteredTrough || bestLag < minLag || norm[bestLag] > 0.27f) return {};
 
-    float refined = static_cast<float>(bestLag);
-    if (bestLag > minLag && bestLag + 1 <= maxLag && norm[bestLag + 1] > 0.0f) {
-        const float left = norm[bestLag - 1];
-        const float middle = norm[bestLag];
-        const float right = norm[bestLag + 1];
-        const float denominator = left - 2.0f * middle + right;
-        if (std::abs(denominator) > 1e-6f) {
-            refined += clampf(0.5f * (left - right) / denominator, -0.5f, 0.5f);
+    // Effective staleness of an estimate produced from buffer offset `base`
+    // with `compare` terms at the winning `lag`: the used span ends
+    // (kDetectWindow - (base+compare+lag)) decimated samples before "now", so
+    // its center sits ~half of (compare+lag) behind the newest sample.
+    // updateTarget extrapolates the raw estimate forward by this amount.
+    const float invSr = 1.0f / static_cast<float>(sampleRate_);
+    const auto leadFor = [&](int base, int cmp, int lag) {
+        const float used = static_cast<float>(kDetectWindow - base);
+        return (used - 0.5f * static_cast<float>(cmp + lag)) *
+               static_cast<float>(kDownsample) * invSr;
+    };
+
+    int bestLag;
+    int base;
+    int compare;
+    // --- Pass A: fresh short window, strict-deep trough ----------------------
+    const int maxLagA = std::min(maxLag, kShortLen - kShortCompare);
+    bestLag = yinTrough(samples.data() + kShortBase, kShortCompare, minLag, maxLagA,
+                        0.12f, norm.data());
+    if (bestLag >= minLag && norm[bestLag] <= 0.20f) {
+        out.provisional = true;
+        base = kShortBase;
+        compare = kShortCompare;
+    } else {
+        // --- Pass B: long window, original strict thresholds (D0 parity) ----
+        bestLag = yinTrough(samples.data(), kCompare, minLag, maxLag, 0.16f,
+                            norm.data());
+        if (bestLag >= minLag && norm[bestLag] <= 0.27f) {
+            base = 0;
+            compare = kCompare;
+        } else {
+            // --- Pass C: same scan, relaxed thresholds; confirm-gated --------
+            bestLag = yinTrough(samples.data(), kCompare, minLag, maxLag,
+                                kTenterRelax, norm.data());
+            if (bestLag < minLag || norm[bestLag] > kTacceptRelax) return out;
+            out.relaxed = true;
+            base = 0;
+            compare = kCompare;
         }
     }
-    const float hz = reducedRate / refined;
-    if (hz < 80.0f || hz > 1000.0f || !std::isfinite(hz)) return {};
-    return {hz, clampf(1.0f - norm[bestLag], 0.0f, 1.0f)};
+
+    float hz = reducedRate / refineLag(norm.data(), bestLag, minLag, maxLag);
+
+    // Native-rate refinement for high-F0 candidates: below lag 34 (decimated)
+    // the 4x grid costs ~0.7% F0 per step. Re-scan +/-4 native lags around
+    // the winner on the freshest samples with an energy-normalized difference;
+    // adopt only if a clean dip exists near the decimated answer.
+    if (!out.relaxed && bestLag <= 34) {
+        constexpr int kRefineCompare = 256;
+        constexpr int kRefineSpan = 400;  // newest native samples, covers lag+compare
+        const std::uint64_t n0 = totalSamples_ - kRefineSpan;
+        float ea = 0.0f;
+        for (int i = 0; i < kRefineCompare; ++i) {
+            const float a = history_[(n0 + i) & (kHistorySize - 1)];
+            ea += a * a;
+        }
+        const int center = 4 * bestLag;
+        std::array<float, 9> depth{};
+        int bestK = -1;
+        float bestDepth = 1.0f;
+        for (int k = 0; k < 9; ++k) {
+            const int lag = center - 4 + k;
+            float diff = 0.0f;
+            float eb = 0.0f;
+            for (int i = 0; i < kRefineCompare; ++i) {
+                const float a = history_[(n0 + i) & (kHistorySize - 1)];
+                const float b = history_[(n0 + i + lag) & (kHistorySize - 1)];
+                const float d = a - b;
+                diff += d * d;
+                eb += b * b;
+            }
+            depth[k] = (ea + eb) > 1e-9f ? diff / (ea + eb) : 1.0f;
+            if (depth[k] < bestDepth) {
+                bestDepth = depth[k];
+                bestK = k;
+            }
+        }
+        if (bestK >= 0 && bestDepth < 0.25f) {
+            float refined = static_cast<float>(center - 4 + bestK);
+            if (bestK > 0 && bestK < 8) {
+                const float l = depth[bestK - 1];
+                const float m = depth[bestK];
+                const float r = depth[bestK + 1];
+                const float den = l - 2.0f * m + r;
+                if (std::abs(den) > 1e-6f) {
+                    refined += clampf(0.5f * (l - r) / den, -0.5f, 0.5f);
+                }
+            }
+            const float hzNative = static_cast<float>(sampleRate_) / refined;
+            if (hz <= 0.0f ||
+                std::abs(12.0f * std::log2(hzNative / hz)) < 1.5f) {
+                hz = hzNative;
+            }
+        }
+    }
+
+    if (hz < 80.0f || hz > 1000.0f || !std::isfinite(hz)) return out;
+    out.hz = hz;
+    out.conf = clampf(1.0f - norm[bestLag], 0.0f, 1.0f);
+    out.leadSec = leadFor(base, compare, bestLag);
+    return out;
 }
 
 float PitchCorrector::delayed(float lagSamples) const noexcept {
@@ -144,9 +285,11 @@ float PitchCorrector::shift(float ratio) noexcept {
 }
 
 void PitchCorrector::updateTarget() noexcept {
-    const PitchResult detected = detect();
-    const float hz = detected.frequencyHz;
-    if (hz <= 0.0f || detected.confidence < 0.73f) {
+    const DetOut r = detect();
+    // Relaxed-pass estimates are weaker by construction (they exist only
+    // where the strict scan failed); their acceptance bar is 1 - tAcceptRelax.
+    const float gate = r.relaxed ? 0.44f : 0.73f;
+    if (r.hz <= 0.0f || r.conf < gate) {
         stableCount_ = 0;
         lastFrequencyHz_ = 0.0f;
         lastTargetHz_ = 0.0f;
@@ -157,15 +300,44 @@ void PitchCorrector::updateTarget() noexcept {
         voiced_.store(false);
         return;
     }
-    // Require two agreeing adjacent estimates; reject wild 1-octave jumps.
-    if (lastFrequencyHz_ > 0.0f && std::abs(12.0f * std::log2(hz / lastFrequencyHz_)) < 1.7f) {
-        stableCount_ = std::min(stableCount_ + 1, 10);
-    } else {
-        stableCount_ = 0;
+    // Agreement is tracked on every admitted estimate (raw values only), even
+    // ones not yet reported — that is what lets buried-F0 estimates confirm.
+    // Tentative passes (provisional/relaxed) agree on a tighter window:
+    // noise troughs rarely repeat within a semitone twice running.
+    const float prev = lastFrequencyHz_;
+    const float agreeSt = (r.relaxed || r.provisional) ? 1.0f : 1.7f;
+    const bool agree =
+        prev > 0.0f && std::abs(12.0f * std::log2(r.hz / prev)) < agreeSt;
+    stableCount_ = agree ? std::min(stableCount_ + 1, 10) : 0;
+    lastFrequencyHz_ = r.hz;
+    const bool confirmed = stableCount_ >= 1;
+    // Armed onsets accept one confident estimate immediately.
+    const bool armedHit = armedLeft_ > 0 && r.conf >= 0.78f;
+    if ((r.relaxed || r.provisional) && !confirmed && !armedHit) {
+        // Tentative estimate, unconfirmed: keep tracking, report unvoiced.
+        lastTargetRatio_ = 1.0f;
+        detectedHz_.store(0.0f);
+        targetHz_.store(0.0f);
+        cents_.store(0.0f);
+        voiced_.store(false);
+        return;
     }
-    lastFrequencyHz_ = hz;
+    float hz = r.hz;
+    if (confirmed && !r.relaxed && prev > 0.0f) {
+        // Lag compensation: linearly project the last raw estimate forward by
+        // the analysis window's effective staleness. Bounded to +/-50 cents
+        // and disabled across real jumps (> 1 semitone per hop), so steady
+        // tones are untouched (dCents ~ 0) and vibrato/portamento lag shrinks.
+        const float dCents = 1200.0f * std::log2(r.hz / prev);
+        if (std::abs(dCents) <= 120.0f) {
+            const float hopSec = static_cast<float>(kDetectHop) /
+                                 static_cast<float>(sampleRate_);
+            const float move = clampf(dCents * r.leadSec / hopSec, -50.0f, 50.0f);
+            hz = r.hz * std::pow(2.0f, move / 1200.0f);
+        }
+    }
     detectedHz_.store(hz);
-    if (stableCount_ < 1) {
+    if (!confirmed && !armedHit) {
         lastTargetRatio_ = 1.0f;
         voiced_.store(false);
         return;

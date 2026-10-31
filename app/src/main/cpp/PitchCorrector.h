@@ -39,7 +39,17 @@ private:
     static constexpr int kReverbSizeA = 1631;
     static constexpr int kReverbSizeB = 2111;
 
-    PitchResult detect() const noexcept;
+    // Internal detector output (D1): richer than the public PitchResult —
+    // carries the analysis staleness and pass provenance used by updateTarget.
+    struct DetOut {
+        float hz = 0.0f;        // raw estimate, 0 = no periodic candidate
+        float conf = 0.0f;      // 1 - CMND trough depth of the winning pass
+        float leadSec = 0.0f;   // effective staleness of the estimate, seconds
+        bool relaxed = false;   // admitted only below the strict thresholds
+        bool provisional = false; // fresh short-window pass: confirm before report
+    };
+
+    DetOut detect() noexcept;
     float delayed(float lagSamples) const noexcept;
     float shift(float ratio) noexcept;
     void updateTarget() noexcept;
@@ -58,6 +68,13 @@ private:
     float lastFrequencyHz_ = 0.0f;
     float lastTargetHz_ = 0.0f;
     int stableCount_ = 0;
+
+    // D1 detector state. recentE_ is a ring of the last few per-update window
+    // energies (running-min noise-floor proxy); armedLeft_ counts down the
+    // "armed" window opened by a short-time energy rise (voiced onset).
+    std::array<float, 8> recentE_{};
+    int recentIdx_ = 0;
+    int armedLeft_ = 0;
 
     std::atomic<int> root_{0};   // C = 0, C# = 1 ... B = 11
     std::atomic<int> scale_{0};  // 0 major, 1 minor, 2 chromatic
