@@ -96,7 +96,7 @@ class MainActivity : Activity() {
     private fun LinearLayout.addLabel(label: String) { addView(text(label, 13f, muted, true)); addSpace(10) }
 
     private fun buildUi() {
-        val scroll = ScrollView(this).apply { fillViewport = true; clipToPadding = false; fitsSystemWindows = true }
+        val scroll = ScrollView(this).apply { setFillViewport(true); clipToPadding = false; fitsSystemWindows = true }
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(30), dp(20), dp(36))

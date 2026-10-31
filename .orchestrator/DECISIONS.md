@@ -75,6 +75,14 @@ Root cause (Hermes-verified): `app/build.gradle.kts` sets NO `-DANDROID_STL` →
 Why Hermes, not Devin (§9 mechanical boundary): 1-argument build-config addition forced unambiguously by the CXX1212 error; DSP/business logic untouched; local Android build impossible on this host (no SDK), so the only verification available is the remote CI — same discipline as D-009.
 Verification gates: kts syntax trivial (Kotlin DSL `arguments += listOf(...)`); remote gate = CI run on the fix commit (verdict recorded in VERIFICATION.md Gate 11). Cascade so far: license hang → wrapper 404 → STL mismatch → (next unknown). Each fix is verified by the NEXT run getting further; the PASS gate remains assembleDebug + APK artifact.
 
+D-011 — Hermes mechanical fix: Kotlin interop — `fillViewport` synthetic property does not exist (MainActivity.kt:99) (2026-10-31)
+Failure evidence (remote, run 41177598995): CXX1212 GONE — `:app:configureCMakeDebug` and `:app:externalNativeBuildDebug` PASSED (D-010 verified by this run getting further); native-dsp success. New failure: `compileDebugKotlin` — `e: MainActivity.kt:99:47 Unresolved reference 'fillViewport'`. Line 99: `ScrollView(this).apply { fillViewport = true; clipToPadding = false; fitsSystemWindows = true }`.
+Root cause (Hermes-verified): Kotlin interop rule — a getter `isX()` maps to Kotlin property `isX`, NOT `x` (e.g. `Thread.isDaemon()`, `View.isSelected()` → `isX`/`isX`). `ScrollView.setFillViewport(boolean)` pairs with `isFillViewport()` → property `isFillViewport`; `fillViewport` is therefore unresolved. `clipToPadding`/`fitsSystemWindows` are fine (they have true `getX()` getters).
+Fix: `setFillViewport(true)` — explicit setter (API 1), bulletproof regardless of interop subtleties; matches the file's imperative style. `isFillViewport = true` would also compile; chose the explicit setter.
+Repo-wide scan for the same landmine BEFORE push: `fillViewport` = 1 occurrence only (fixed); audited every boolean-assignment in the file (`includeFontPadding`, `isAllCaps`, `clipToPadding`, `fitsSystemWindows`, `textSize`, `setTextColor`) — all valid (`setTextColor` correctly already explicit: TextView has no `getTextColor()` getter, only `getCurrentTextColor()`). No other occurrences of this pattern.
+Why Hermes, not Devin (§9 mechanical boundary): single-token interop fix forced by the exact compiler error; no design decision involved (same discipline as D-009/D-010). NOTE for handoff: this is Devin's code — 2 interop-class issues in Devin-authored Kotlin now observed; the next Devin card must include a self-review pass over Kotlin interop properties (or CI gains ktlint/detekt in a later gate).
+Verification gates: remote gate = CI run on the fix commit (verdict recorded in VERIFICATION.md Gate 11). Cascade so far: license hang → wrapper 404 → STL mismatch → Kotlin interop → (next unknown).
+
 ---
 
 Audit Trail Integrity Check (per `references/autonomy-directive.md` — verified 2026-10-29)
