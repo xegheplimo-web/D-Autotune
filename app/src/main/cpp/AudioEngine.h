@@ -49,7 +49,8 @@ private:
     std::atomic<uint64_t> missingFrames_{0};
     std::atomic<uint64_t> inputShortReads_{0};
     std::atomic<uint64_t> framesProcessed_{0};
-    std::atomic<uint64_t> xruns_{0};
+    // Last xrun count reported by the output stream; written by snapshot() (UI thread).
+    mutable std::atomic<uint64_t> xruns_{0};
     std::atomic<uint64_t> cbMaxUs_{0};
     std::atomic<uint64_t> cbAvgUs_{0};
     std::atomic<uint64_t> cbCount_{0};

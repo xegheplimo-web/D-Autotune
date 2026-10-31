@@ -151,7 +151,7 @@ std::array<double, 16> AudioEngine::snapshot() const noexcept {
     uint64_t hist[kCbHistBuckets] = {};
     uint64_t histTotal = 0;
     for (int i = 0; i < kCbHistBuckets; ++i) {
-        hist[i] = cbHist_[i].load(std::memory_order_relaxed);
+        hist[i] = cbHist_[static_cast<size_t>(i)].load(std::memory_order_relaxed);
         histTotal += hist[i];
     }
     double cbP99Ms = 0.0;
@@ -161,7 +161,7 @@ std::array<double, 16> AudioEngine::snapshot() const noexcept {
         for (int i = 0; i < kCbHistBuckets; ++i) {
             acc += hist[i];
             if (acc >= need) {
-                cbP99Ms = static_cast<double>((i + 1) * kCbHistBucketUs) / 1000.0;
+                cbP99Ms = static_cast<double>(static_cast<uint64_t>(i + 1) * kCbHistBucketUs) / 1000.0;
                 break;
             }
         }
