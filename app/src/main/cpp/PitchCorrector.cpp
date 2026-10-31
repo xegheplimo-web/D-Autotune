@@ -79,6 +79,17 @@ void PitchCorrector::reset(int sampleRate) noexcept {
     recentE_.fill(1e30f);
     recentIdx_ = 0;
     armedLeft_ = 0;
+    trackHz_.fill(0.0f);
+    trackAt_.fill(0);
+    trackCount_ = 0;
+    appliedHz_ = 0.0f;
+    pendingHz_ = 0.0f;
+    pendingCount_ = 0;
+    holdFrames_ = 0;
+    gapFrames_ = 0;
+    breathHops_ = std::max(1, static_cast<int>(0.150f * static_cast<float>(sampleRate_) /
+                                             static_cast<float>(kDetectHop)));
+    updateIndex_ = 0;
     detectedHz_.store(0.0f);
     targetHz_.store(0.0f);
     cents_.store(0.0f);
@@ -285,21 +296,102 @@ float PitchCorrector::shift(float ratio) noexcept {
 }
 
 void PitchCorrector::updateTarget() noexcept {
-    const DetOut r = detect();
+    applyDetection(detect());
+}
+
+float PitchCorrector::trackMedian() const noexcept {
+    if (trackCount_ <= 0) return 0.0f;
+    if (trackCount_ == 1) return trackHz_[2];
+    if (trackCount_ == 2) return 0.5f * (trackHz_[1] + trackHz_[2]);
+    const float a = trackHz_[0], b = trackHz_[1], c = trackHz_[2];
+    return std::max(std::min(a, b), std::min(std::max(a, b), c));
+}
+
+void PitchCorrector::pushTrack(float hz) noexcept {
+    trackHz_[0] = trackHz_[1];
+    trackHz_[1] = trackHz_[2];
+    trackHz_[2] = hz;
+    trackAt_[0] = trackAt_[1];
+    trackAt_[1] = trackAt_[2];
+    trackAt_[2] = updateIndex_;
+    trackCount_ = std::min(trackCount_ + 1, 3);
+}
+
+void PitchCorrector::reseedTrack(float hz) noexcept {
+    trackHz_.fill(hz);
+    trackAt_.fill(updateIndex_);
+    trackCount_ = 3;
+}
+
+void PitchCorrector::reportUnvoiced(bool hard) noexcept {
+    // hard = a true no-estimate update (silence): agreement restarts from
+    // scratch. Soft = an admitted estimate that was not reportable and not
+    // holdable: the D1 bookkeeping it just did stays valid.
+    if (hard) {
+        stableCount_ = 0;
+        lastFrequencyHz_ = 0.0f;
+    }
+    lastTargetHz_ = 0.0f;
+    lastTargetRatio_ = 1.0f;
+    holdFrames_ = 0;
+    ++gapFrames_;
+    if (gapFrames_ > breathHops_) {
+        // Gap longer than the breath window: the note context is gone.
+        trackCount_ = 0;
+        pendingCount_ = 0;
+        appliedHz_ = 0.0f;
+    }
+    detectedHz_.store(0.0f);
+    targetHz_.store(0.0f);
+    cents_.store(0.0f);
+    voiced_.store(false);
+}
+
+void PitchCorrector::applyDetection(const DetOut& r) noexcept {
+    // --- D2 thresholds ------------------------------------------------------
+    // A candidate farther than this from the running median of the accepted
+    // estimates is a jump, not a track update.
+    constexpr float kTrackJumpCents = 300.0f;
+    // A pending jump is accepted when the next estimate lands within this of
+    // it — i.e. two consecutive agreeing detections.
+    constexpr float kPendingAgreeCents = 150.0f;
+    // Schmitt band on the voiced flag: a non-reportable estimate holds voiced
+    // when it is a strong-pass frame (>= kHoldConf; glitches and real jumps
+    // live here) or a weak one still on the tracked note (>= kExitConf).
+    // Below kExitConf the flag releases. Entering voiced keeps the D1 rule
+    // (confirm/agreement gate), so enter and exit conditions genuinely differ.
+    constexpr float kHoldConf = 0.70f;
+    constexpr float kExitConf = 0.35f;
+    // Bound on consecutive non-reportable holds (~43 ms @48k): a transition
+    // the confirmer cannot see must still end.
+    constexpr int kHoldMax = 4;
+
+    ++updateIndex_;
     // Relaxed-pass estimates are weaker by construction (they exist only
     // where the strict scan failed); their acceptance bar is 1 - tAcceptRelax.
     const float gate = r.relaxed ? 0.44f : 0.73f;
+    const bool hadTrack = trackCount_ > 0;
+
     if (r.hz <= 0.0f || r.conf < gate) {
-        stableCount_ = 0;
-        lastFrequencyHz_ = 0.0f;
-        lastTargetHz_ = 0.0f;
-        lastTargetRatio_ = 1.0f;
-        detectedHz_.store(0.0f);
-        targetHz_.store(0.0f);
-        cents_.store(0.0f);
-        voiced_.store(false);
+        if (r.hz > 0.0f && hadTrack && r.conf >= kExitConf && holdFrames_ < kHoldMax &&
+            std::abs(1200.0f * std::log2(r.hz / trackMedian())) <= kTrackJumpCents) {
+            // Sub-gate estimate still on the tracked note — a weak patch, not
+            // a phrase end. Hold voiced instead of flapping. (Unreachable for
+            // the D1 passes, whose estimates always clear `gate`; the test
+            // seam exercises this band directly.)
+            ++holdFrames_;
+            gapFrames_ = 0;
+            // D1 reporting rule per class: tentative frames showed 0 Hz until
+            // confirmed; strict frames showed their raw Hz. Hold mirrors it so
+            // the reported estimate stream is unchanged — only the flag holds.
+            detectedHz_.store((r.relaxed || r.provisional) ? 0.0f : r.hz);
+            voiced_.store(true);
+            return;
+        }
+        reportUnvoiced(r.hz <= 0.0f);
         return;
     }
+
     // Agreement is tracked on every admitted estimate (raw values only), even
     // ones not yet reported — that is what lets buried-F0 estimates confirm.
     // Tentative passes (provisional/relaxed) agree on a tighter window:
@@ -313,16 +405,9 @@ void PitchCorrector::updateTarget() noexcept {
     const bool confirmed = stableCount_ >= 1;
     // Armed onsets accept one confident estimate immediately.
     const bool armedHit = armedLeft_ > 0 && r.conf >= 0.78f;
-    if ((r.relaxed || r.provisional) && !confirmed && !armedHit) {
-        // Tentative estimate, unconfirmed: keep tracking, report unvoiced.
-        lastTargetRatio_ = 1.0f;
-        detectedHz_.store(0.0f);
-        targetHz_.store(0.0f);
-        cents_.store(0.0f);
-        voiced_.store(false);
-        return;
-    }
-    float hz = r.hz;
+    const bool reportable = confirmed || armedHit;
+
+    float exHz = r.hz;
     if (confirmed && !r.relaxed && prev > 0.0f) {
         // Lag compensation: linearly project the last raw estimate forward by
         // the analysis window's effective staleness. Bounded to +/-50 cents
@@ -333,24 +418,88 @@ void PitchCorrector::updateTarget() noexcept {
             const float hopSec = static_cast<float>(kDetectHop) /
                                  static_cast<float>(sampleRate_);
             const float move = clampf(dCents * r.leadSec / hopSec, -50.0f, 50.0f);
-            hz = r.hz * std::pow(2.0f, move / 1200.0f);
+            exHz = r.hz * std::pow(2.0f, move / 1200.0f);
         }
     }
-    detectedHz_.store(hz);
-    if (!confirmed && !armedHit) {
-        lastTargetRatio_ = 1.0f;
-        voiced_.store(false);
+
+    // --- D2 tracker ingest ---------------------------------------------------
+    // Only reportable or strong estimates touch the ring: weak unconfirmed
+    // (relaxed) detections are the noise-suspect class and never enter it.
+    bool accepted = false;
+    if (reportable || r.conf >= kHoldConf) {
+        if (!hadTrack) {
+            pushTrack(exHz);
+            accepted = true;
+        } else {
+            const float med = trackMedian();
+            const float dCents = std::abs(1200.0f * std::log2(exHz / med));
+            if (dCents <= kTrackJumpCents) {
+                pushTrack(exHz);
+                accepted = true;
+                pendingCount_ = 0;  // a track-agreeing frame resolves any jump
+            } else if (pendingCount_ > 0 &&
+                       std::abs(1200.0f * std::log2(exHz / pendingHz_)) <=
+                           kPendingAgreeCents) {
+                if (++pendingCount_ >= 2) {
+                    reseedTrack(exHz);
+                    accepted = true;
+                    pendingCount_ = 0;
+                }
+            } else {
+                pendingHz_ = exHz;
+                pendingCount_ = 1;
+            }
+        }
+        if (accepted) appliedHz_ = trackMedian();
+    }
+
+    if (reportable) {
+        holdFrames_ = 0;
+        gapFrames_ = 0;
+        // Telemetry stays the detector's own estimate (D1 parity); the
+        // median-of-3 track drives the correction target, not the report.
+        detectedHz_.store(exHz);
+        voiced_.store(true);
+        if (!accepted) return;  // jump still confirming: flag on, target frozen
+        const float target = nearestScaleFrequency(appliedHz_, root_.load(), scale_.load());
+        if (target <= 0.0f) return;
+        lastTargetHz_ = target;
+        const float correction = 1200.0f * std::log2(target / appliedHz_);
+        const float fraction = amount_.load(std::memory_order_relaxed);
+        lastTargetRatio_ = std::pow(2.0f, clampf(correction, -300.0f, 300.0f) * fraction / 1200.0f);
+        targetHz_.store(target);
+        cents_.store(correction * fraction);
         return;
     }
-    const float target = nearestScaleFrequency(hz, root_.load(), scale_.load());
-    if (target <= 0.0f) return;
-    lastTargetHz_ = target;
-    const float correction = 1200.0f * std::log2(target / hz);
-    const float fraction = amount_.load(std::memory_order_relaxed);
-    lastTargetRatio_ = std::pow(2.0f, clampf(correction, -300.0f, 300.0f) * fraction / 1200.0f);
-    targetHz_.store(target);
-    cents_.store(correction * fraction);
-    voiced_.store(true);
+
+    // Non-reportable admitted estimate: hold the voiced flag through strong
+    // frames (a disagreeing one is a jump candidate being confirmed) and
+    // through weak estimates still on the tracked note; drop everything else
+    // exactly like D1. The target chain stays frozen, so the correction does
+    // not sag toward unity while a glitch is absorbed.
+    const float med = trackMedian();
+    const bool onTrack = med > 0.0f &&
+        std::abs(1200.0f * std::log2(r.hz / med)) <= kTrackJumpCents;
+    if (hadTrack && holdFrames_ < kHoldMax &&
+        (r.conf >= kHoldConf || (r.conf >= kExitConf && onTrack))) {
+        ++holdFrames_;
+        gapFrames_ = 0;
+        detectedHz_.store((r.relaxed || r.provisional) ? 0.0f : r.hz);
+        voiced_.store(true);
+        return;
+    }
+    reportUnvoiced(false);
+}
+
+void PitchCorrector::updateTargetForTest(float hz, float conf, bool relaxed,
+                                         bool provisional, float leadSec) noexcept {
+    DetOut r;
+    r.hz = hz;
+    r.conf = conf;
+    r.leadSec = leadSec;
+    r.relaxed = relaxed;
+    r.provisional = provisional;
+    applyDetection(r);
 }
 
 void PitchCorrector::process(const float* input, float* output, int frames, int outChannels) noexcept {

@@ -32,4 +32,15 @@ add_test(NAME d1_improvement COMMAND d1_improvement)
 add_custom_command(TARGET d1_improvement POST_BUILD
                    COMMAND d1_improvement
                    COMMENT "D1 vs D0 improvement report")
+# D2: deterministic tracking/hysteresis state tests (not accuracy metrics).
+add_executable(d2_tracking test_d2_tracking.cpp corpus_gen.cpp
+               ../app/src/main/cpp/PitchCorrector.cpp)
+target_include_directories(d2_tracking PRIVATE ../app/src/main/cpp ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(d2_tracking PRIVATE cxx_std_17)
+target_compile_options(d2_tracking PRIVATE -O2 -Wall -Wextra -Wpedantic)
+add_test(NAME d2_tracking COMMAND d2_tracking)
+# Same trick: ctest hides passing output, so the D2 table is re-run at build.
+add_custom_command(TARGET d2_tracking POST_BUILD
+                   COMMAND d2_tracking
+                   COMMENT "D2 tracking + hysteresis test report")
 
