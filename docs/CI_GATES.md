@@ -96,11 +96,13 @@ per-component exported/launcher/effective flags, application flag dump
 
 - **`d5_realvoice`** runs batteries R1–R5 on the committed singing corpus
   (`docs/corpus/manifest.jsonl`, schema in `docs/corpus/README.md`):
-  output-F0 vs annotated reference + correction ratio (R1), F1/F2 formant
-  retention vs input at ±60 Hz (R2), envelope pumping on ≥0.5 s
-  `long_tones` segments (R3 — prints the D6 trigger when input-corrected
-  pump excess > 3 dB), boundary/sustained artifacts (R4), and
-  impulse-centroid DSP delay per corpus rate (R5, D4 class 2.27–4.17 ms).
+  output-F0 vs annotated reference + correction ratio plus the D6
+  octave-tail gate — 0 scored windows with |out-vs-snap-target residual|
+  ≥ 600 ¢ (R1), F1/F2 LPC-envelope formant retention vs input at ±60 Hz
+  (R2), envelope pumping on ≥0.5 s `long_tones` segments (R3 — prints
+  the D6 trigger when input-corrected pump excess > 3 dB),
+  boundary/sustained artifacts (R4), and impulse-centroid DSP delay per
+  corpus rate (R5, D4 class 2.27–4.17 ms).
 - **`d5_listening_pack`** renders the randomized A/B blind-listening pack
   (`docs/corpus/listening_pack/`, key at `listening_key.csv`) for the
   ≥3-person human smoke test.

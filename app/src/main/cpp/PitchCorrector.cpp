@@ -23,6 +23,7 @@ int yinTrough(const float* x, int compare, int minLag, int maxLag,
     float running = 0.0f;
     float previous = 1.0f;
     bool entered = false;
+    int found = 0;
     norm[0] = 1.0f;
     for (int lag = 1; lag <= maxLag; ++lag) {
         float difference = 0.0f;
@@ -36,10 +37,25 @@ int yinTrough(const float* x, int compare, int minLag, int maxLag,
         norm[lag] = cmnd;
         if (!entered && lag >= minLag && cmnd < tEnter) entered = true;
         // First local trough, not the global minimum (octave protection).
-        if (entered && lag > minLag && cmnd > previous) return lag - 1;
+        // The curve is still filled through maxLag: detect()'s subharmonic
+        // check reads the ~2x region after the winner is chosen (D6).
+        if (found == 0 && entered && lag > minLag && cmnd > previous) found = lag - 1;
         previous = cmnd;
     }
-    return 0;
+    return found;
+}
+
+// Goertzel magnitude at `cyclesPerCycle` cycles per sample over n samples.
+// Used by the D6 subharmonic check for spectral evidence at f0 and f0/2.
+float goertzelAmp(const float* x, int n, double cycles) noexcept {
+    const double w = 2.0 * std::cos(2.0 * kPi * cycles);
+    double s0 = 0.0, s1 = 0.0, s2 = 0.0;
+    for (int i = 0; i < n; ++i) {
+        s0 = static_cast<double>(x[i]) + w * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    }
+    return static_cast<float>(2.0 * std::sqrt(s1 * s1 + s2 * s2 - w * s1 * s2) / n);
 }
 
 // Parabolic interpolation of the lag around a CMND trough.
@@ -81,6 +97,7 @@ void PitchCorrector::reset(int sampleRate) noexcept {
     driveRatio_ = 1.0f;
     transientEnv_ = 0.0f;
     transientHold_ = 0;
+    passLag_ = 0.5f * lastPeriod_;
     grainGridValid_ = false;
     smoothedRatio_ = 1.0f;
     lastTargetRatio_ = 1.0f;
@@ -197,6 +214,7 @@ PitchCorrector::DetOut PitchCorrector::detect() noexcept {
     int bestLag;
     int base;
     int compare;
+    int scannedMax;
     // --- Pass A: fresh short window, strict-deep trough ----------------------
     const int maxLagA = std::min(maxLag, kShortLen - kShortCompare);
     bestLag = yinTrough(samples.data() + kShortBase, kShortCompare, minLag, maxLagA,
@@ -205,6 +223,7 @@ PitchCorrector::DetOut PitchCorrector::detect() noexcept {
         out.provisional = true;
         base = kShortBase;
         compare = kShortCompare;
+        scannedMax = maxLagA;
     } else {
         // --- Pass B: long window, original strict thresholds (D0 parity) ----
         bestLag = yinTrough(samples.data(), kCompare, minLag, maxLag, 0.16f,
@@ -221,6 +240,100 @@ PitchCorrector::DetOut PitchCorrector::detect() noexcept {
             base = 0;
             compare = kCompare;
         }
+        scannedMax = maxLag;
+    }
+
+    // D6 subharmonic check: the first-trough scan takes the earliest dip
+    // below the entry threshold. On H2-dominant voice (weak H1, strong H2 —
+    // the male scales in the D5 corpus) that dip is the half-period one and
+    // the estimate locks an octave UP, then the tracker follows it. "Deeper at
+    // 2x" alone is NOT a discriminator: every integer multiple of a clean
+    // period dips, and later multiples read systematically deeper under CMND
+    // normalization — and "winner is marginal" does not separate "half-period
+    // winner" from "true period that is marginal due to fractional lag or
+    // noise" either (the curve is symmetric under a factor of two). The
+    // asymmetric evidence is SPECTRAL: a true half-period lock means the
+    // winner's frequency is the 2nd harmonic of a real lower note, so energy
+    // exists at f0/2; a correct winner at the true period has ~none there.
+    // A flip therefore requires all of:
+    //   (a) the winning trough is marginal (norm >= 0.06) — a confident
+    //       winner is never second-guessed;
+    //   (b) the 2x trough is at least twice as deep (n2 <= 0.5 * winner) and
+    //       confident in absolute terms (n2 <= 0.10) — equal-depth marginal
+    //       pairs (0.085 vs 0.083) stay, and a marginal winner is never
+    //       replaced by an equally marginal 2x;
+    //   (c) measurable spectral energy at the would-be fundamental f0/2
+    //       (>= 10% of the energy at f0) — the phantom-subharmonic case
+    //       (correct marginal winner on a clean tone) reads ~2-3% there,
+    //       while H2-dominant real voice reads ~20-40%.
+    {
+        const int twoLo =
+            std::max(minLag, static_cast<int>(1.70f * static_cast<float>(bestLag)));
+        const int twoHi =
+            std::min(scannedMax, static_cast<int>(2.35f * static_cast<float>(bestLag)));
+        int lag2 = 0;
+        float n2 = norm[bestLag];
+        for (int l = twoLo; l <= twoHi; ++l) {
+            if (norm[l] < n2) {
+                n2 = norm[l];
+                lag2 = l;
+            }
+        }
+        bool spectralOk = false;
+        if (lag2 > 0 && norm[bestLag] >= 0.06f &&
+            n2 <= 0.5f * norm[bestLag] && n2 <= 0.10f) {
+            const double fWin = reducedRate / static_cast<double>(bestLag);
+            const float eWin =
+                goertzelAmp(samples.data() + base, compare, fWin / reducedRate);
+            const float eSub = goertzelAmp(samples.data() + base, compare,
+                                           0.5 * fWin / reducedRate);
+            spectralOk = eWin > 1e-5f && eSub >= 0.10f * eWin;
+        }
+        if (spectralOk) {
+#ifdef DAUTOTUNE_DETECT_DEBUG
+            dbgWinnerHz_ = reducedRate / static_cast<float>(bestLag);
+            dbgWinNorm_ = norm[bestLag];
+            dbgWinLag_ = bestLag;
+            dbgLag2_ = lag2;
+            dbgN2_ = n2;
+            dbgFlipped_ = 1;
+#endif
+            bestLag = lag2;
+        }
+#ifdef DAUTOTUNE_DETECT_DEBUG
+        else {
+            dbgWinnerHz_ = reducedRate / static_cast<float>(bestLag);
+            dbgWinNorm_ = norm[bestLag];
+            dbgWinLag_ = bestLag;
+            dbgLag2_ = lag2;
+            dbgN2_ = n2;
+            dbgFlipped_ = 0;
+        }
+#endif
+    }
+
+    // D6 tracker-veto evidence (see DetOut): a CMND band scan plus one
+    // Goertzel on the final winning lag — trivial cost — consumed only by
+    // applyDetection's octave-class pending jump gate. A detection from the
+    // test seam leaves them at -1, which can never veto (D2 battery H
+    // requires octave-class reseeds to land).
+    {
+        const int hiLo =
+            std::max(minLag, static_cast<int>(0.43f * static_cast<float>(bestLag)));
+        const int hiHi =
+            std::min(scannedMax, static_cast<int>(0.58f * static_cast<float>(bestLag)));
+        float octHi = 1e30f;
+        for (int l = hiLo; l <= hiHi; ++l) octHi = std::min(octHi, norm[l]);
+        out.octHi = octHi < 1e29f ? octHi : -1.0f;
+        const double fWin = reducedRate / static_cast<double>(bestLag);
+        out.subE = goertzelAmp(samples.data() + base, compare,
+                               0.5 * fWin / reducedRate);
+#ifdef DAUTOTUNE_DETECT_DEBUG
+        dbgSubE_ = out.subE;
+        dbgOctHi_ = out.octHi;
+        dbgFundE_ = goertzelAmp(samples.data() + base, compare,
+                                fWin / reducedRate);
+#endif
     }
 
     float hz = reducedRate / refineLag(norm.data(), bestLag, minLag, maxLag);
@@ -409,8 +522,14 @@ float PitchCorrector::psolaShift(float ratio) noexcept {
     const float psola = sum / (wsum + 0.02f);
 
     // Unvoiced/edge path: passthrough aligned by half a period so the V/UV
-    // crossfade is coherent with the PSOLA path's ~P/2 average lag.
-    const float pass = delayed(0.5f * lastPeriod_);
+    // crossfade is coherent with the PSOLA path's ~P/2 average lag. The lag
+    // must be continuous: at a V/UV transition lastPeriod_ jumps to the new
+    // note's period, and a hard 0.5*P re-anchor teleports the read point by
+    // tens of samples — a single-sample output step unrelated to input slew
+    // (the D5-R4 onset click). Slewing at the V/UV xfade rate converges the
+    // alignment within the crossfade itself, so no step and no added latency.
+    passLag_ += uvSlew_ * (0.5f * lastPeriod_ - passLag_);
+    const float pass = delayed(passLag_);
     const float target = (active && transientHold_ <= 0) ? 1.0f : 0.0f;
     if (transientHold_ <= 0)
         uvGain_ += uvSlew_ * (target > uvGain_ ? 1.0f : -1.0f);
@@ -569,13 +688,60 @@ void PitchCorrector::applyDetection(const DetOut& r) noexcept {
                        std::abs(1200.0f * std::log2(exHz / pendingHz_)) <=
                            kPendingAgreeCents) {
                 if (++pendingCount_ >= 2) {
-                    reseedTrack(exHz);
-                    accepted = true;
-                    pendingCount_ = 0;
+                    // D6 octave-phantom veto: two agreeing detections an
+                    // octave-or-more off the track are a real note change
+                    // ONLY if the old/new periodicity story agrees. On the
+                    // missing-fundamental male voice in the D5 corpus the
+                    // detector emits sustained ~2x winners while the true
+                    // (octave-below) fundamental still carries energy —
+                    // and sustained ~f0/2 winners while the true
+                    // (octave-above) period still correlates. Neither is a
+                    // jump; both are the detector reporting a harmonic
+                    // position. Each direction therefore vets on the side of
+                    // the signal that can carry the evidence: up-candidates
+                    // on the persisting octave-below note (subE), down-
+                    // candidates on the persisting octave-above period
+                    // (octHi). Fields are -1 on the test seam, which can
+                    // never veto (D2 battery H requires octave reseeds to
+                    // land); and non-octave jumps are never gated, so real
+                    // 300..1200-cent intervals keep the 2-update cadence.
+                    const float sgn = 1200.0f * std::log2(exHz / med);
+                    bool veto = false;
+                    if (sgn > 1050.0f) {
+                        // ~2x candidate: a real note persisting at exHz/2
+                        // means the candidate is its harmonic. The phantom
+                        // stream carries this evidence on ~every hop; an
+                        // occasional sub-threshold dip is noise — so veto on
+                        // EITHER member of the agreeing pair, not just the
+                        // second.
+                        veto = r.subE >= 0.005f || pendingSubE_ >= 0.005f;
+                    } else if (sgn < -1050.0f) {
+                        // ~f0/2 candidate: if the tracked octave above still
+                        // correlates (deep CMND dip near lag/2), the
+                        // candidate is its phantom fundamental, not a jump.
+                        // Absolute candidate-side energy is NOT usable here:
+                        // low-frequency rumble under the real note reads
+                        // nonzero at the phantom frequency on this voice.
+                        veto = (r.octHi >= 0.0f && r.octHi <= 0.16f) ||
+                               (pendingOctHi_ >= 0.0f && pendingOctHi_ <= 0.16f);
+                    }
+#ifdef DAUTOTUNE_DETECT_DEBUG
+                    dbgOctVeto_ = veto ? 1 : 0;
+#endif
+                    if (veto) {
+                        pendingCount_ = 0;
+                        pendingHz_ = 0.0f;
+                    } else {
+                        reseedTrack(exHz);
+                        accepted = true;
+                        pendingCount_ = 0;
+                    }
                 }
             } else {
                 pendingHz_ = exHz;
                 pendingCount_ = 1;
+                pendingSubE_ = r.subE;
+                pendingOctHi_ = r.octHi;
             }
         }
         if (accepted) appliedHz_ = trackMedian();

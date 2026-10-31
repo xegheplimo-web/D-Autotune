@@ -153,6 +153,13 @@ Gate 17 — G2-D4 end-to-end host verification (VERIFIED GREEN — commits `80ad
 - **A/B verdict table (round-3 rule)**: pitch SAME (both <3 ¢), formants BETTER, artifacts BETTER, delay BETTER (9×), callback cost WORSE-but-in-budget. Round-3 rule satisfied: no gate regresses without compensating benefit.
 - G2 DSP chain D0→D4 COMPLETE. Next: GPT round-4 consultation (D-014 prereqs now present) before G3 (UX) / real-voice corpus work.
 
+Gate 18 — D5 real-voice corpus landing + first R1–R5 real run (2026-10-31, Hermes-verified):
+- Corpus acquisition (Hermes): VocalSet v1.1 CC BY 4.0 subset — 20 clips (4 singers × long_tones/scales × straight), staged via remotezip from Zenodo 1193957 (audio) + 7061507 (Annotated-VocalSet reference F0); male scales clips >15 s trimmed to the schema bound; peak-normalized to ≤ −1.5 dBFS; committed `e70719c` (clips + annotation CSVs + manifest.jsonl + THIRD_PARTY.md attribution + README prep notes). CI loader verdict: `20 declared, 20 usable, 0 rejected`.
+- First real-voice R1–R5 run: CI run **41199096037** @ e70719c — native-dsp FAIL (**3 failures**, `D5 REAL-VOICE: 3 FAILURES, 0 warnings`), android PASS. Local Windows repro identical numbers (EXIT=1). FAILS: R2 F1 worst |Δ| 884 Hz / F2 482 Hz (gate ±60 Hz) on 217 sustained windows; R4 5/432 amplified boundaries (worst 11.53×) — all at silence→tone onsets. PASS with real numbers: R3 pump excess +0.03 dB (D6 trigger >3 dB NOT fired — round-4's 3.5–4.2 dB pumping question CLOSED as synthetic-signal artifact); R5 3.75 ms class. R1 informational: octave tail female-only (f1 p95 1204.9¢, f3 1201.2¢ vs m1 71.5 / m3 68.5¢; medians 5.4–11.9¢) → suspected detector sub-octave lock; det 87.3% of 16421 voiced chunks (vs 97.8% synthetic).
+- Scope check (Hermes): e70719c touches only `docs/corpus/**` + `THIRD_PARTY.md` (Hermes-owned attribution). Key fix `b7bd4a1`: the committed listening_key.csv was header-only (skip-corpus pack run artifact); the regenerated 16-pair key is now committed. Listening pack v1 generated locally (8 pairs; WAVs gitignored, key/sheet committed).
+- Control-plane: D6 card dispatched to Devin from `b7bd4a1` (root-cause + fix R2/R4/octave-tail; CI expected red until D6 lands — the gate worked as designed).
+
+
 ---
 
 Updated verification status:

@@ -138,3 +138,9 @@ D-015 — GPT round-4 verdict: G2 HOST-VERIFIED PASS / G3 PREPARATION GO / COMME
 - HERMES AUTONOMY: Devin sole coding agent; Hermes independently verifies each bounded task; owner approval required for commercial/legal/spending/production actions.
 - Next execution order: real-vocal harness -> vocal-quality + pumping verification -> G3 Compose after PASS -> G1 device certification when hardware arrives -> G4 release candidate.
 - Next GPT review: real-vocal measurements + blind listening results + pumping root-cause evidence + G3 readiness decision. Never claim VOCAL-QUALITY VERIFIED / LIVE CERTIFIED / PRODUCT_COMPLETE prematurely.
+
+D-016 — D6 scope: fix the 2 real-voice defects + octave tail; pumping fix NOT dispatched (2026-10-31, card `g2-d6-realvoice-fix.md`, base `b7bd4a1`):
+- Evidence: CI 41199096037 RED @ e70719c — 3 failures (R2 F1 worst 884 Hz, R2 F2 482 Hz on 217 sustained windows; R4 5/432 amplified boundaries, worst 11.53×); local Windows repro identical (EXIT=1). R3 pump excess +0.03 dB on real voice → the D-015 trigger (>3 dB input-corrected) NOT fired → no engine pumping fix; round-4's 3.5–4.2 dB pumping question closed as a synthetic-signal artifact.
+- Decision: D6 = (1) detector sub-octave lock — female-only ~1200¢ tail (f1/f3 p95) with output audibly an octave low in those windows; (2) R2 formant — per-window diagnosis first (engine damage vs LPC measurement noise on high-F0 female frames), fix the right side, never loosen the gate silently; (3) R4 onset amplification — root-cause the soft-onset steps amplified up to 11.53× and fix without regressing the D3 transient-preservation + click-free batteries. NEW R1 gate: 0 windows ≥600¢ (the octave signature) across the whole corpus.
+- Rationale: fix by evidence, not by gate adjustment; full regression suite (D0–D5) must stay green; listening pack v1 kept for the owner's listening of the current state, regenerated after D6.
+

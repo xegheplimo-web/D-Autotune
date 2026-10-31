@@ -71,6 +71,18 @@ private:
         float leadSec = 0.0f;   // effective staleness of the estimate, seconds
         bool relaxed = false;   // admitted only below the strict thresholds
         bool provisional = false; // fresh short-window pass: confirm before report
+        // D6 octave-phantom evidence for the tracker veto (detector-side):
+        //   subE  — normalized spectral energy at hz/2. A real note persisting
+        //           an octave below the candidate reads >= ~0.005; a phantom
+        //           subharmonic position reads ~0.
+        //   octHi — deepest CMND dip near lag/2: if the note an octave above
+        //           the candidate is the true period, it still correlates
+        //           there (deep), while on a real octave-down jump that
+        //           periodicity is gone (shallow).
+        // -1 = not computed (test seam), which must never veto (D2 battery H
+        // semantics).
+        float subE = -1.0f;
+        float octHi = -1.0f;
     };
 
     DetOut detect() noexcept;
@@ -120,6 +132,21 @@ private:
     float driveRatio_ = 1.0f;    // test pin: correction ratio
     float transientEnv_ = 0.0f;  // decaying |x| peak envelope for onsets
     int transientHold_ = 0;      // samples left routing transients to passthrough
+    float passLag_ = 0.0f;       // slewed 0.5*lastPeriod_ lag for the pass path
+#ifdef DAUTOTUNE_DETECT_DEBUG
+    // Host-probe diagnostics: detect() fills these each update; production
+    // builds never define the macro so there is no shipped surface or cost.
+    float dbgWinnerHz_ = 0.0f;   // Hz before the D6 subharmonic check
+    float dbgWinNorm_ = 0.0f;    // CMND at the winning lag
+    float dbgN2_ = 0.0f;         // CMND at the best ~2x candidate
+    int dbgWinLag_ = 0;
+    int dbgLag2_ = 0;
+    int dbgFlipped_ = 0;
+    int dbgOctVeto_ = 0;         // tracker veto fired on the last update
+    float dbgSubE_ = 0.0f;       // spectral energy at emitted hz/2
+    float dbgFundE_ = 0.0f;      // spectral energy at emitted hz
+    float dbgOctHi_ = 0.0f;      // CMND depth near emitted lag/2
+#endif
     bool grainGridValid_ = false;
 
     float smoothedRatio_ = 1.0f;
@@ -150,6 +177,12 @@ private:
     float appliedHz_ = 0.0f;
     float pendingHz_ = 0.0f;
     int pendingCount_ = 0;
+    // D6: detector-side octave evidence of the armed pending candidate, so
+    // the phantom veto at reseed can consider BOTH members of the agreeing
+    // pair — a single sub-threshold hop in a persistently-evidenced phantom
+    // stream must not slip the gate. -1 = seam/sentinel, never vetoes.
+    float pendingSubE_ = -1.0f;
+    float pendingOctHi_ = -1.0f;
     int holdFrames_ = 0;
     int gapFrames_ = 0;
     int breathHops_ = 14;

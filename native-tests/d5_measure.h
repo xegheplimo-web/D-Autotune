@@ -138,10 +138,14 @@ inline Rendered renderChain(const std::vector<float>& sig, int sr,
     return r;
 }
 
-// --- spectral / time helpers (identical to test_d4_e2e) -------------------------
+// --- spectral / time helpers (identical to test_d4_e2e, except measureF0's
+// hiHz default: 1000 Hz — the D3/D4 originals capped at 600, which silently
+// halves every corpus note above ~600 Hz (the f1/f3 F5 tones, D6 finding) ---
+
+inline double goertzel(const float* x, int n, int sr, double f);
 
 inline double measureF0(const float* x, int n, int sr, double loHz = 60.0,
-                        double hiHz = 600.0) {
+                        double hiHz = 1000.0) {
     const int minLag = static_cast<int>(sr / hiHz);
     const int maxLag = std::min(n - 2, static_cast<int>(sr / loHz));
     if (maxLag <= minLag) return 0.0;
@@ -165,13 +169,67 @@ inline double measureF0(const float* x, int n, int sr, double loHz = 60.0,
     }
     if (best < 0.4) return 0.0;
     int lag = bestLag;
+    int fallbackLag = bestLag;
     for (int l = minLag + 1; l < maxLag; ++l) {
         if (nc[static_cast<std::size_t>(l)] >= 0.9 * best &&
             nc[static_cast<std::size_t>(l)] >= nc[static_cast<std::size_t>(l - 1)] &&
             nc[static_cast<std::size_t>(l)] >= nc[static_cast<std::size_t>(l + 1)]) {
-            lag = l;
+            fallbackLag = l;
             break;
         }
+    }
+    // D6: octave-safe pick. Autocorrelation alone cannot rank a peak against
+    // its multiples — a P-periodic signal correlates at every kP, and on
+    // H2/H3-dominant male voice (m3 in the D5 corpus) a P/2 or P/3 peak
+    // routinely lands within 10% of the true period's and steals the first-
+    // strong-peak walk above (reads 509 on a true-255 signal, 351 on a true-
+    // 698 soprano). The asymmetric evidence is spectral:
+    //   * a candidate lag is a HARMONIC position when a real note exists at
+    //     a subharmonic: nc at k*lag stays comparable to best AND there is
+    //     measurable energy at f0/k (k up to 4 — a lag can sit on the 4th
+    //     harmonic of the true period, e.g. 520 Hz on a 124 signal);
+    //   * a candidate lag is only a valid fundamental when energy exists at
+    //     its own frequency — the true-124-periodic (engine-doubled) window
+    //     reads ~0 at 124 even though it correlates there.
+    // So: demote candidates with a real subharmonic, then take the surviving
+    // candidate with the STRONGEST periodicity that has spectral support at
+    // its own frequency. If none qualifies, keep the first-strong-peak answer
+    // (honest report of weird waveforms, e.g. period-doubled output).
+    {
+        const double eFloor = 0.004;
+        int picked = 0;
+        double pickedNc = 0.0;
+        for (int l = minLag + 1; l < maxLag; ++l) {
+            if (nc[static_cast<std::size_t>(l)] < 0.5 * best ||
+                nc[static_cast<std::size_t>(l)] < nc[static_cast<std::size_t>(l - 1)] ||
+                nc[static_cast<std::size_t>(l)] < nc[static_cast<std::size_t>(l + 1)])
+                continue;
+            const double f0 = sr / static_cast<double>(l);
+            const double eF0 = goertzel(x, n, sr, f0);
+            if (eF0 < eFloor) continue;     // no fundamental energy: not an F0
+            // Harmonic-position test: a real note exists near k*lag when that
+            // longer lag still correlates (a band, since the winning pick is
+            // rarely an exact multiple of the true period) AND has spectral
+            // energy at its frequency.
+            bool harmonic = false;
+            for (int k = 2; k <= 4 && !harmonic; ++k) {
+                const int lo = std::max(minLag, static_cast<int>(0.97 * k * l));
+                const int hi = std::min(maxLag, static_cast<int>(1.03 * k * l) + 1);
+                for (int kl = lo; kl <= hi; ++kl) {
+                    if (nc[static_cast<std::size_t>(kl)] < 0.6 * best) continue;
+                    if (goertzel(x, n, sr, sr / static_cast<double>(kl)) >=
+                        std::max(0.10 * eF0, eFloor)) {
+                        harmonic = true;
+                        break;
+                    }
+                }
+            }
+            if (!harmonic && nc[static_cast<std::size_t>(l)] > pickedNc) {
+                picked = l;
+                pickedNc = nc[static_cast<std::size_t>(l)];
+            }
+        }
+        lag = picked > 0 ? picked : fallbackLag;
     }
     double refined = lag;
     if (lag > minLag && lag < maxLag) {
@@ -208,6 +266,70 @@ inline double bandCentroid(const float* x, int n, int sr, double f0, double fLo,
         den += a * a;
     }
     return den > 1e-12 ? num / den : 0.0;
+}
+
+// --- D6: LPC spectral-envelope band centroid ------------------------------------
+// The harmonic-grid centroid above breaks on real voice in two ways, both
+// seen on the committed corpus: (1) when fewer than one f0 harmonic falls
+// inside the band it returns 0, comparing "nothing" against a real centroid
+// (f0~455 Hz -> harmonics straddle [500,900] entirely); (2) a harmonic at a
+// band edge flips membership for a few-Hz f0 change (6*f0 crossing 1500)
+// moving the centroid by ~f0. An LPC envelope has no harmonic membership:
+// it models the formant curve itself, so the centroid is F0-independent and
+// cannot edge-flip. Autocorrelation + Levinson-Durbin, order `order`, power
+// envelope |1/A(e^jw)|^2 integrated on a `stepHz` grid.
+
+inline std::vector<double> lpcCoeffs(const float* x, int n, int order) {
+    std::vector<double> r(static_cast<std::size_t>(order) + 1, 0.0);
+    for (int k = 0; k <= order; ++k) {
+        double s = 0.0;
+        for (int i = 0; i + k < n; ++i) s += static_cast<double>(x[i]) * x[i + k];
+        r[static_cast<std::size_t>(k)] = s / static_cast<double>(n);
+    }
+    std::vector<double> a(static_cast<std::size_t>(order) + 1, 0.0);
+    a[0] = 1.0;
+    double e = r[0];
+    for (int i = 1; i <= order; ++i) {
+        double acc = r[static_cast<std::size_t>(i)];
+        for (int j = 1; j < i; ++j)
+            acc += a[static_cast<std::size_t>(j)] * r[static_cast<std::size_t>(i - j)];
+        const double k = e > 1e-12 ? -acc / e : 0.0;
+        const std::vector<double> prev = a;
+        a[static_cast<std::size_t>(i)] = k;
+        for (int j = 1; j < i; ++j)
+            a[static_cast<std::size_t>(j)] =
+                prev[static_cast<std::size_t>(j)] + k * prev[static_cast<std::size_t>(i - j)];
+        e *= (1.0 - k * k);
+        if (e < 1e-12) e = 1e-12;
+    }
+    return a;
+}
+
+inline double lpcBandCentroid(const float* x, int n, int sr, double fLo,
+                              double fHi, int order = 24, double stepHz = 5.0) {
+    const std::vector<double> a = lpcCoeffs(x, n, order);
+    double num = 0.0, den = 0.0;
+    for (double f = fLo; f <= fHi; f += stepHz) {
+        const double w = 2.0 * kPi * f / sr;
+        double re = 0.0, im = 0.0;
+        for (std::size_t k = 0; k < a.size(); ++k) {
+            re += a[k] * std::cos(w * static_cast<double>(k));
+            im -= a[k] * std::sin(w * static_cast<double>(k));
+        }
+        const double e2 = 1.0 / (re * re + im * im + 1e-18);
+        num += f * e2;
+        den += e2;
+    }
+    return den > 1e-12 ? num / den : 0.0;
+}
+
+// Centered quasi-stationary frame for LPC scoring: min(frameSec, len) in the
+// middle of the window (sustained vowels drift little; a bounded frame keeps
+// the stationarity assumption honest on multi-second segments).
+inline std::pair<std::size_t, int> lpcFrame(std::size_t a, int len, int sr,
+                                            double frameSec = 0.06) {
+    const int fl = std::max<int>(16, std::min(len, static_cast<int>(frameSec * sr)));
+    return {a + static_cast<std::size_t>(len - fl) / 2, fl};
 }
 
 inline double maxStep(const std::vector<float>& y, std::size_t a, std::size_t b) {

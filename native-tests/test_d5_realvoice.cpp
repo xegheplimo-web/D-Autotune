@@ -214,6 +214,15 @@ void batteryR1(const Loaded& L) {
                 "of %zu voiced chunks; VUV conf %zu/%zu/%zu/%zu\n",
                 100.0 * det, voicedFrames, vuvAll.tvEv, vuvAll.tvEu, vuvAll.tuEv,
                 vuvAll.tuEu);
+    // D6 octave-tail gate: a ~1200-cent residual is the octave-lock signature
+    // (was p95 1204.9/1201.2c on the two female singers pre-fix). 600 cents
+    // gives 6x margin over the largest legitimate snap shift (~100c).
+    std::size_t octWindows = 0;
+    for (const double e : errVsTgt)
+        if (e >= 600.0) ++octWindows;
+    std::printf("  octave-tail: %zu windows with |residual| >= 600c\n",
+                octWindows);
+    check(octWindows == 0, "R1: zero octave-tail windows (|residual| >= 600c)");
     check(windows > 0, "R1: scored at least one F0 window");
 }
 
@@ -236,14 +245,21 @@ void batteryR2(const Loaded& L) {
             const double fi = d5m::measureF0(c.samples.data() + a, len, c.fs);
             const double fo = d5m::measureF0(render(c, false).mono.data() + a, len, c.fs);
             if (fi <= 0.0 || fo <= 0.0) continue;
-            const double c1i = d5m::bandCentroid(c.samples.data() + a, len, c.fs, fi,
-                                                 500.0, 900.0);
-            const double c2i = d5m::bandCentroid(c.samples.data() + a, len, c.fs, fi,
-                                                 1000.0, 1500.0);
-            const double c1o = d5m::bandCentroid(render(c, false).mono.data() + a, len,
-                                                 c.fs, fo, 500.0, 900.0);
-            const double c2o = d5m::bandCentroid(render(c, false).mono.data() + a, len,
-                                                 c.fs, fo, 1000.0, 1500.0);
+            // D6: score the LPC envelope centroid on a centered 60 ms frame,
+            // not the f0-harmonic grid. On high-F0 real voice the grid can
+            // hold zero harmonics (returns 0 vs a real centroid) and band-edge
+            // membership flips move the centroid by ~f0 — measurement noise,
+            // not engine damage. The LPC envelope is F0-independent, so the
+            // +-60 Hz gate measures actual formant movement.
+            const auto [fa, fl] = d5m::lpcFrame(a, len, c.fs);
+            const double c1i = d5m::lpcBandCentroid(c.samples.data() + fa, fl,
+                                                    c.fs, 500.0, 900.0);
+            const double c2i = d5m::lpcBandCentroid(c.samples.data() + fa, fl,
+                                                    c.fs, 1000.0, 1500.0);
+            const double c1o = d5m::lpcBandCentroid(
+                render(c, false).mono.data() + fa, fl, c.fs, 500.0, 900.0);
+            const double c2o = d5m::lpcBandCentroid(
+                render(c, false).mono.data() + fa, fl, c.fs, 1000.0, 1500.0);
             ++scored;
             worstF1 = std::max(worstF1, std::abs(c1o - c1i));
             worstF2 = std::max(worstF2, std::abs(c2o - c2i));
