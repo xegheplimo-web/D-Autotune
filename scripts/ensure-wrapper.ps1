@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $project = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $jar = Join-Path $project 'gradle\wrapper\gradle-wrapper.jar'
 $expected = '81a82aaea5abcc8ff68b3dfcb58b3c3c429378efd98e7433460610fecd7ae45f'
-$url = 'https://services.gradle.org/distributions/gradle-8.13-wrapper.jar'
+$url = 'https://raw.githubusercontent.com/gradle/gradle/v8.13.0/gradle/wrapper/gradle-wrapper.jar'
 function Test-Checksum($path) {
     if (!(Test-Path $path)) { return $false }
     return ((Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant() -eq $expected)

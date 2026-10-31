@@ -21,6 +21,10 @@ local.properties
 .agent_report.md
 worktrees/
 
+# Wrapper JAR is intentionally NOT committed — gradlew/ensure-wrapper.ps1
+# bootstrap it with an SHA256-verified download (gradlew: EXPECTED checksum).
+gradle/wrapper/gradle-wrapper.jar
+
 .devin/
 # NOTE: .orchestrator/ is DELIBERATELY NOT excluded — the control plane
 # (PROJECT_STATE.md, DISCUSSIONS.md, DECISIONS.md, VERIFICATION.md) is
