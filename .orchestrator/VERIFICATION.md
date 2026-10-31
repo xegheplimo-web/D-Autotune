@@ -92,6 +92,14 @@ G2-D0 verification (DSP baseline + golden corpus, commits `a6020ae` + `20e83a8` 
 - Honest report properties: numbers cite their exact CI run; no invented numbers; the D0 floor is explicitly "D1 must beat these on the same harness"; real licensed vocal samples DEFERRED (license-vetted source needed) — stated in Known limitations; reproduce instructions included.
 - Note for D1 card: Devin's own run 41183408556 (report commit) re-measured med 10.0 µs vs the cited 20.2 µs — timing varies across CI runner instances; accuracy metrics were IDENTICAL across both runs (determinism of values confirmed). D1's latency guard uses the reported 20.2 µs median as the D0 reference.
 
+G2-D1 verification (adaptive YIN + voicing, commits `b2b6272` + `8837872`, runs 41184850825 + 41185190541 BOTH GREEN, 2026-10-31 15:3x-15:5x local):
+- Scope check (Hermes-verified): 7 files, 1048 insertions 45 deletions — `app/src/main/cpp/PitchCorrector.{cpp,h}` (detect path ONLY: 3-pass scan + native-rate refine + bounded 2-point extrapolation + armed onsets; shifter path byte-verified untouched), `native-tests/{d0_reference.cpp, test_d1_improvement.cpp}` (frozen D0 reference detector for exact A/B), `docs/baseline/D1_CHANGES.md`. Detector state added: ~44 bytes, no heap/locks/virtual calls in process path. `.orchestrator/` untouched.
+- **MEASURED D1 RESULT (CI run 41184850825, Hermes cross-checked the log line verbatim)**: GRAND TOTAL 7563 chunks — det **97.8 %** (D0 95.8) · median **0.2 ¢** (D0 1.0, 5× better) · p95 **14.5 ¢** (D0 43.8, 3× better) · octave errors **0.00 %** (held) · V/UV **97.7 %** (D0 95.7) · call med 14.7-14.8 µs (faster than D0's 20.1) / p95 57.0-57.1 µs (tail up on noise rows only, ~140× under the 10.7 ms chunk budget). ALL 10 harness gates PASS in CI log.
+- **SNR cliff CLOSED**: snr_5db det% 0 → **100** both rates, median 8.0/6.9 ¢ (target ≤ 25). snr_0db stays det% 0 (no noise lock), tuEv 6 → 6 (no false voicing growth). tvEu 151 → 77 @44.1k (aggregate 315 → 163).
+- **Tracking lag cut ~4×**: vib d05/f7 median 62.8 → 15.5 ¢, p95 86.9 → 29.4 ¢; porta p95 121.4 → 52.6 ¢; formant_vib_a 33.2 → 9.4 ¢. High-F0 residuals gone (A4/C5/G5 all ≤ 0.3 ¢).
+- Honest deviations: card's SNR-threshold-scaling sketch REJECTED by Devin with a correct argument (energy-ratio SNR estimator is degenerate on sustained signals — floor converges to signal power, would re-tighten thresholds mid-item); replaced by strict-pass-failure-triggered relaxation + 2-frame temporal consistency. Honest regressions shown: snr_10/20/30 medians rose modestly (≤ 11.6 ¢ @10 dB — far inside musical use), timing tail on noise rows. D1 ≠ D2 scope respected: no tracker/note state machine added.
+- A/B discipline: the "D0" column is a frozen copy of the pre-D1 detector compiled in the same binary (`d0_reference.cpp`) — exact same-corpus comparison, not pasted numbers.
+
 ---
 
 Updated verification status:
