@@ -6,6 +6,9 @@ plugins {
 android {
     namespace = "com.dautotune.app"
     compileSdk = 36
+    // Pinned to the NDK CI installs (.github/workflows/ci.yml) so host and
+    // CI builds use the same toolchain.
+    ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = "com.dautotune.app"
@@ -34,7 +37,10 @@ android {
     }
     buildFeatures { prefab = true }
     externalNativeBuild {
-        cmake { path = file("src/main/cpp/CMakeLists.txt") }
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1" // matches cmake_minimum_required + CI component
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

@@ -30,6 +30,10 @@ jobs:
       # @v4 uses the identical mechanism (src/main.ts), so upgrading is not a
       # fix. Here `yes` cannot starve the prompt and `timeout` fails fast
       # (124) instead of hanging until the 6h job timeout.
+      # sdk_pipe() classifies pipeline exit codes via PIPESTATUS instead of
+      # `|| true` (GPT round-2: masked real sdkmanager failures). `yes` dying
+      # with SIGPIPE (141) once sdkmanager closes stdin is expected and
+      # benign; only the sdkmanager/timeout exit decides the verdict.
       - name: Install Android components
         timeout-minutes: 15
         run: |
@@ -40,11 +44,91 @@ jobs:
           fi
           echo "Using sdkmanager: $SDKMANAGER"
           "$SDKMANAGER" --version
-          yes | timeout 300 "$SDKMANAGER" --licenses > /dev/null || true
-          yes | timeout 600 "$SDKMANAGER" 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.0.12077973' 'cmake;3.22.1'
+
+          # yes | timeout N sdkmanager <args> | tee log
+          # PIPESTATUS: [0]=yes [1]=timeout->sdkmanager [2]=tee
+          sdk_pipe() {
+            local label="$1" limit="$2" log
+            shift 2
+            log="$(mktemp)"
+            set +e
+            yes 2>/dev/null | timeout "$limit" "$SDKMANAGER" "$@" 2>&1 | tee "$log"
+            local ps=("${PIPESTATUS[@]}")
+            set -e
+            local yes_rc="${ps[0]:-0}" sdk_rc="${ps[1]:-255}" tee_rc="${ps[2]:-0}"
+            echo "[$label] exit codes: yes=$yes_rc sdkmanager=$sdk_rc tee=$tee_rc"
+            case "$sdk_rc" in
+              0) ;;
+              124|137|143)
+                echo "::error::$label timed out or was killed (sdkmanager exit $sdk_rc)"
+                tail -n 20 "$log"; exit 1 ;;
+              *)
+                echo "::error::$label failed (sdkmanager exit $sdk_rc)"
+                tail -n 20 "$log"; exit 1 ;;
+            esac
+            if [ "$yes_rc" != 0 ] && [ "$yes_rc" != 141 ]; then
+              echo "::warning::$label: yes exited $yes_rc (expected 0 or SIGPIPE=141)"
+            fi
+            if [ "$tee_rc" != 0 ]; then
+              echo "::error::$label: log capture failed (tee exit $tee_rc)"
+              exit 1
+            fi
+            echo "[$label] tail of sdkmanager output:"
+            tail -n 8 "$log"
+            SDK_LOG="$log"
+          }
+
+          sdk_pipe "sdkmanager --licenses" 300 --licenses
+          # The license run must leave auditable output (prompts and/or the
+          # "All SDK package licenses accepted" line) — an empty log means we
+          # cannot prove licenses were offered/accepted.
+          if ! grep -qi 'license' "$SDK_LOG"; then
+            echo "::error::no license output captured; cannot audit license acceptance"
+            cat "$SDK_LOG"
+            exit 1
+          fi
+          sdk_pipe "component install" 600 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.0.12077973' 'cmake;3.22.1'
+      - name: Print resolved toolchain
+        run: |
+          echo "== pins in app/build.gradle.kts =="
+          grep -nE 'ndkVersion|version = "' app/build.gradle.kts || true
+          for d in "ndk/27.0.12077973" "cmake/3.22.1"; do
+            echo "--- $ANDROID_HOME/$d/source.properties"
+            grep -E 'Pkg\.(Revision|Desc)' "$ANDROID_HOME/$d/source.properties" \
+              || { echo "::error::$d not installed"; exit 1; }
+          done
       - name: Compile debug APK
         # gradlew is committed mode 100644 (no exec bit); invoke via sh.
         run: sh gradlew --no-daemon :app:assembleDebug
+      - name: Verify Gradle wrapper JAR checksum
+        # gradle-wrapper.jar is NOT committed; gradlew bootstraps it from
+        # gradle/gradle@v8.13.0 and pins its SHA-256 in the EXPECTED var.
+        # Re-verify here so the artifact the build used is audited in CI.
+        run: |
+          EXPECTED=$(sed -n 's/^EXPECTED="\([0-9a-f]\{64\}\)".*/\1/p' gradlew | head -n1)
+          if [ -z "$EXPECTED" ]; then
+            echo "::error::no pinned wrapper SHA-256 (EXPECTED=) found in gradlew"
+            exit 1
+          fi
+          JAR=gradle/wrapper/gradle-wrapper.jar
+          if [ ! -f "$JAR" ]; then
+            echo "::error::$JAR missing; gradlew bootstrap did not run"
+            exit 1
+          fi
+          ACTUAL=$(sha256sum "$JAR" | awk '{print $1}')
+          echo "pinned: $EXPECTED"
+          echo "actual: $ACTUAL"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::gradle-wrapper.jar checksum mismatch"
+            exit 1
+          fi
+          grep -n '^distributionSha256Sum=' gradle/wrapper/gradle-wrapper.properties \
+            || { echo "::error::distributionSha256Sum not pinned"; exit 1; }
+          echo "Wrapper JAR checksum OK; Gradle distribution SHA-256 pinned."
+      - name: APK packaging gate (16 KiB)
+        run: python3 scripts/apk-gates.py 16k app/build/outputs/apk/debug/app-debug.apk
+      - name: Manifest security gate
+        run: python3 scripts/apk-gates.py manifest app/build/outputs/apk/debug/app-debug.apk
       - uses: actions/upload-artifact@v4
         if: success()
         with:
