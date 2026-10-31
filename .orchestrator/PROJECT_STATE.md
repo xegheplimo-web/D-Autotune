@@ -84,3 +84,11 @@ CI milestone (first full pass in project history):
 - Ownership discipline held: DC-001 (Devin) = ci.yml only; D-009/D-010/D-011 (Hermes mechanical) = 2-line URL swap + 1-argument build config + 1-token Kotlin interop, each forced by the exact compiler/CI error and each verified by the NEXT run getting further.
 
 In flight: DC-002 — latency/xrun instrumentation (Devin, card `scratch/dautotune-cards/dc-002-latency-instrumentation.md`). G0 audit item #14 (G1 prerequisite). Snapshot layout 8→12, xruns + algoLatency + cbMax/cbAvg, callback remains allocation/lock/log-free.
+
+## 8. Session update 2026-10-31 (DC-002 landed + GPT round-2 verdict — supersedes §7 "In flight")
+
+- **DC-002 LANDED + verified**: commit `db65a0f`, CI run 41179251125 GREEN (both jobs), APK re-verified (16 KB PASS, RECORD_AUDIO only). Diff-reviewed by Hermes. G0 audit #14 upgraded to IMPLEMENTED.
+- **GPT round-2**: brief `docs/orchestration/gpt_round2_brief.md` (`6f6fb49`) SENT via Chrome debug; reply archived `docs/orchestration/gpt_round2_reply.md`; verdict **CONDITIONAL GO** encoded as D-012. Incident: first insert attempt landed in the thread's canvas doc (round-1 DIRECTIVE writing block) — restored via the block's own undo within ~30 s, no data loss; lesson recorded (disambiguate composers by viewport geometry, never first-match DOM).
+- GPT round-2 requires: **DC-002A** (algoLatency semantics rejected — relabel + p99/histogram/deadline/xrun-validity/missingFrames-rate/input-starvation + granted stream properties), **CI-H** (license `|| true` fix + static APK gates: 16 KB ELF+ZIP, manifest/security, reproducibility), **G2-D0** (golden corpus + baseline of CURRENT detector). G2 GO parallel; G1 stays BLOCKED_HARDWARE; G1 thresholds <12/<20 ms demoted to research targets — Live gate stays p95 ≤ 50 ms (S) / 70 ms (A) + perceptual check.
+- Round-3 prerequisites (what GPT expects next): DC-002A verification + revised DC-003 measurement design + D0/D1 golden benchmark evidence.
+- Next dispatch: DC-002A (Devin) → verify → G2-D0 (Devin, disjoint files: native-tests/ only) → CI-H (Devin) → Hermes revises DC-003 card per approved design (correlation-based, 2 measurement classes, fail-closed) before its dispatch.
