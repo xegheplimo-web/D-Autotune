@@ -69,3 +69,11 @@ For this project, the expected GPT recommendation (based on `docs/ROADMAP.md` P0
 - Recommend continuing with P0 stability (CI verification) before committing to P1 architecture changes.
 
 This aligns with independent decision D-005 (verify CI first) and D-001/D-002 (repo + control plane first).
+
+## 5. Round-2 Brief — SENT (2026-10-31, post-DC-002)
+
+- **Thread**: `chatgpt.com/c/6ae57dbb-f3bc-83ec-abea-d8f57db27be6` (same thread as round-1; internal title "Giải thích LGBT" is a misgenerated title, confirmed to contain the D-Autotune conversation).
+- **Content**: `docs/orchestration/gpt_round2_brief.md` (commit `6f6fb49`) — round-2 check-in: CI GREEN cascade, APK verification, DC-002 landed numbers (snapshot 8→12, db65a0f, run 41179251125), DC-003 loopback ping design (inline), G1 plan, 4 questions (fix-cascade/APK-gate audit, DC-002 sufficiency for G1, DC-003 design review, G2 priority check), constraints unchanged.
+- **Sent via**: Chrome debug `:9222` → Runtime.evaluate → ProseMirror composer (`execCommand insertText`, 3,717 chars) → click nút "Gửi". Composer emptied after send; "round-2 check-in" visible in thread body (39,612 → 41,691 chars).
+- **Incident (recorded honestly, resolved immediately)**: the first insert attempt landed in the thread's CANVAS/writing-block editor (the round-1 directive doc, `data-testid=chatgpt-writing-block`, 12,391 chars of "DIRECTIVE — D-AUTOTUNE AUTONOMOUS PRODUCT DELIVERY...") instead of the chat composer — the canvas editor's ProseMirror was the first `.ProseMirror` match. The canvas content was fully restored via the block's own "Hoàn tác chỉnh sửa gần nhất" (undo) button within ~30 s of the mistake; verified: doc back to len 12,391 with original head text, composer then empty → brief re-inserted into the real bottom composer (y≈919, len 3717) → sent. No data loss; canvas doc verified intact after undo. Lesson: always disambiguate composers by VIEWPORT POSITION (composer is bottom-of-viewport, y>500; canvas blocks sit in the scroll area at negative y), never by first-match DOM query.
+- **Reply**: pending — will be archived to `docs/orchestration/gpt_round2_reply.md` when received.
