@@ -67,7 +67,7 @@ APK-level verification (downloaded from run 41178223381, python ELF parser + AXM
 - Contents: `classes.dex` ×3; `lib/{arm64-v8a,x86_64}/{libc++_shared.so, libdautotune.so, liboboe.so}` — both declared ABIs present (arm64-v8a, x86_64; armeabi-v7a intentionally absent).
 - **16 KB page-size gate PASS (hard evidence)**: all PT_LOAD segments of ALL 6 .so files have `p_align == 0x4000` (16384) — including `libc++_shared.so` (the classic 16 KB breaker) and `liboboe.so`. G0 audit item #22 upgraded: IMPLEMENTED → VERIFIED at APK level.
 - **Privacy gate PASS (APK level)**: binary AXML string pool contains exactly ONE permission: `android.permission.RECORD_AUDIO`. `INTERNET`/`WRITE_EXTERNAL`/`CAMERA`/`FOREGROUND_SERVICE`: absent. G0 audit item #12 confirmed at APK level (source-level had verified same).
-- Known limitation (honest): minSdk/targetSdk values live in the manifest but were verified at SOURCE level only (`app/build.gradle.kts` — minSdk 30/targetSdk 36); binary-AXML structured parsing (vs string-pool probe) not performed — flagged for the DC-002 verification pass or a future `apkanalyzer` step in CI.
+- **API-level gate PASS (binary AXML structured parse)**: `<uses-sdk>` in the built manifest: `minSdkVersion = 30` (attr resId 0x0101020c), `targetSdkVersion = 36` (0x01010270) — matches source (`app/build.gradle.kts`) exactly. This closes the previously flagged known limitation (minSdk/targetSdk were source-level only).
 Historical evidence (superseded runs, preserved for audit): run 41175801147 native-dsp success / android failure (license hang — see D-008 for root-cause discipline), runs 41177042055/41177443204/41177598995 failure cascade as listed above.
 
 ---
