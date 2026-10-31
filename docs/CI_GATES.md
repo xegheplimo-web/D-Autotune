@@ -103,6 +103,9 @@ per-component exported/launcher/effective flags, application flag dump
   the D6 trigger when input-corrected pump excess > 3 dB),
   boundary/sustained artifacts (R4), and impulse-centroid DSP delay per
   corpus rate (R5, D4 class 2.27–4.17 ms).
+- **R4 diagnostic warning**: a boundary step above `1.10× input + 0.01`
+  (but inside the `1.25× + 0.01` hard gate) prints a nonblocking warning
+  with amplitude, clip, and timestamp — diagnostic only, never a failure.
 - **`d5_listening_pack`** renders the randomized A/B blind-listening pack
   (`docs/corpus/listening_pack/`, key at `listening_key.csv`) for the
   ≥3-person human smoke test.

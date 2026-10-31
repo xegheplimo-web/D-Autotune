@@ -144,30 +144,69 @@ inline Rendered renderChain(const std::vector<float>& sig, int sr,
 
 inline double goertzel(const float* x, int n, int sr, double f);
 
-inline double measureF0(const float* x, int n, int sr, double loHz = 60.0,
-                        double hiHz = 1000.0) {
-    const int minLag = static_cast<int>(sr / hiHz);
-    const int maxLag = std::min(n - 2, static_cast<int>(sr / loHz));
-    if (maxLag <= minLag) return 0.0;
-    std::vector<double> nc(static_cast<std::size_t>(maxLag) + 1, 0.0);
-    double best = -1.0;
-    int bestLag = minLag;
-    for (int lag = minLag; lag <= maxLag; ++lag) {
-        double s = 0.0, ea = 0.0, eb = 0.0;
+// Windowed RMS — energy probe for coverage/residual classification.
+inline double rmsOf(const float* x, std::size_t n) {
+    if (n == 0) return 0.0;
+    double acc = 0.0;
+    for (std::size_t i = 0; i < n; ++i) acc += static_cast<double>(x[i]) * x[i];
+    return std::sqrt(acc / static_cast<double>(n));
+}
+
+// Normalized-autocorrelation scan shared by measureF0 and the D7 probes:
+// nc[lag] over [loHz,hiHz], plus the strongest lag/value. No candidate
+// ranking here — measureF0 applies the octave-safe pick on top.
+struct NcScan {
+    std::vector<double> nc;
+    int minLag = 0, maxLag = 0;
+    int bestLag = 0;
+    double best = 0.0;
+};
+
+inline NcScan ncScan(const float* x, int n, int sr, double loHz, double hiHz) {
+    NcScan s;
+    s.minLag = static_cast<int>(sr / hiHz);
+    s.maxLag = std::min(n - 2, static_cast<int>(sr / loHz));
+    if (s.maxLag <= s.minLag) return s;
+    s.nc.assign(static_cast<std::size_t>(s.maxLag) + 1, 0.0);
+    s.best = -1.0;
+    s.bestLag = s.minLag;
+    for (int lag = s.minLag; lag <= s.maxLag; ++lag) {
+        double c = 0.0, ea = 0.0, eb = 0.0;
         for (int i = 0; i + lag < n; ++i) {
             const double a = x[i], b = x[i + lag];
-            s += a * b;
+            c += a * b;
             ea += a * a;
             eb += b * b;
         }
-        const double c = (ea > 1e-9 && eb > 1e-9) ? s / std::sqrt(ea * eb) : 0.0;
-        nc[static_cast<std::size_t>(lag)] = c;
-        if (c > best) {
-            best = c;
-            bestLag = lag;
+        const double v =
+            (ea > 1e-9 && eb > 1e-9) ? c / std::sqrt(ea * eb) : 0.0;
+        s.nc[static_cast<std::size_t>(lag)] = v;
+        if (v > s.best) {
+            s.best = v;
+            s.bestLag = lag;
         }
     }
+    return s;
+}
+
+// Raw periodicity peak (no threshold, no octave ranking) — D7 coverage
+// classification compares it against measureF0's own 0.4 report bound.
+inline double peakNc(const float* x, int n, int sr, double loHz = 60.0,
+                     double hiHz = 1000.0) {
+    return ncScan(x, n, sr, loHz, hiHz).best;
+}
+
+inline double measureF0(const float* x, int n, int sr, double loHz = 60.0,
+                        double hiHz = 1000.0, double* ncBest = nullptr) {
+    const NcScan scan = ncScan(x, n, sr, loHz, hiHz);
+    const int minLag = scan.minLag;
+    const int maxLag = scan.maxLag;
+    if (maxLag <= minLag) return 0.0;
+    const std::vector<double>& nc = scan.nc;
+    const double best = scan.best;
+    if (ncBest) *ncBest = best;
     if (best < 0.4) return 0.0;
+    int bestLag = scan.bestLag;
     int lag = bestLag;
     int fallbackLag = bestLag;
     for (int l = minLag + 1; l < maxLag; ++l) {
