@@ -1,0 +1,10 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(dautotune LANGUAGES CXX)
+add_library(dautotune SHARED native-lib.cpp AudioEngine.cpp PitchCorrector.cpp)
+target_compile_features(dautotune PRIVATE cxx_std_17)
+target_compile_options(dautotune PRIVATE -Wall -Wextra -Wconversion -fvisibility=hidden)
+find_package(oboe REQUIRED CONFIG)
+find_library(log-lib log)
+target_link_libraries(dautotune PRIVATE oboe::oboe ${log-lib})
+# Ensure native library ELF segment alignment for Android 15+ 16 KiB page devices.
+target_link_options(dautotune PRIVATE "-Wl,-z,max-page-size=16384")
