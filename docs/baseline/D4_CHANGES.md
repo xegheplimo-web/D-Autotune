@@ -27,10 +27,11 @@ verified byte-identical before and after the run:
 | formant retention (max \|dc\| F1/F2 Hz; \|s*−1\|) | 128.1; 0.022 | 45.1; 0.010 | **BETTER** |
 | artifacts (slew ratio / transient excursions) | 1.16 / 15 | 0.99 / 1 | **BETTER** |
 | DSP signal delay (ms) | 20.32 | 2.27 | **BETTER** |
-| callback cost p95 (µs per 512-call) | 25.6 | 54.9 | **WORSE — inside the 200 µs budget** |
+| callback cost p95 (µs per 512-call, CI runner) | 10.8 | 19.0 | **WORSE — inside the 200 µs budget** (local MinGW cross-check: 25.6 vs 54.9, same conclusion) |
 
 **Verdict: PASS.** The new shifter is worse on no gate. The one regression —
-per-call CPU (~2× the old engine, still 3.6× under budget) — is the accepted
+per-call CPU (~1.8× the old engine on CI, ~2.1× local, ≥ 3.6× under budget
+on either host) — is the accepted
 price of the TD-PSOLA architecture, and the pitch-accuracy row is identical
 by construction (same frozen tracker drives both shifters), so the
 "compensating benefit" clause is not even needed; latency and formants are
@@ -155,15 +156,22 @@ its documented kBaseDelay+window algorithmic delay.
 
 ## E. Callback cost per 512-frame process() call
 
-| rate | new median / p95 | old median / p95 | budget |
-|---:|---:|---:|---|
-| 48000 | 53.9 / 54.6 µs | 20.5 / 25.7 µs | p95 < 200 µs — PASS |
-| 44100 | 53.5 / 54.5 µs | 20.9 / 25.5 µs | PASS |
+Two honest measurement hosts (both real, both far inside the 200 µs budget):
 
-The new engine costs ~2.1× the old per call (~55 µs vs ~26 µs). This is the
-expected TD-PSOLA price (per-sample grain mixing vs two read heads) and is
-the only WORSE verdict — inside the 200 µs D3 budget, and 512 frames @48 k
-is 10.7 ms of real-time, so the call uses ~0.5 % of the deadline.
+| rate | host | new median / p95 | old median / p95 | budget |
+|---:|---|---:|---:|---|
+| 48000 | **CI Ubuntu runner (canonical, runs 41194634866 + 41194792144)** | 18.9 / 19.0 µs | 10.7 / 10.8 µs | p95 < 200 µs — PASS |
+| 48000 | local Windows MinGW (cross-check) | 53.9 / 54.6 µs | 20.5 / 25.7 µs | PASS |
+| 44100 | CI runner | 18.6 / 18.8 µs | 10.7 / 10.9 µs | PASS |
+| 44100 | local Windows MinGW | 53.5 / 54.5 µs | 20.9 / 25.5 µs | PASS |
+
+Host note: the local MinGW build times ~3× slower than the CI gcc build —
+absolute numbers differ by host, the RATIO (new ≈ 1.8–2.1× old) holds on
+both. The verdict below cites the CI (canonical) numbers. The new engine
+costs ~1.8× the old per call on CI. This is the expected TD-PSOLA price
+(per-sample grain mixing vs two read heads) and is the only WORSE verdict —
+inside the 200 µs D3 budget on either host, and 512 frames @48 k is 10.7 ms
+of real-time, so the call uses ≤ 0.2 % of the deadline.
 
 ## F. Reverb-on stability (reverb = 0.15)
 

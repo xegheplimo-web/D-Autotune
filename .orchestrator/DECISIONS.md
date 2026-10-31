@@ -115,3 +115,26 @@ Evidence: commits 615bf8a + a58bcd6 (Devin DC-002A + Hermes mechanical const-fix
 - G2-D0 DISPATCHED (Devin, background): card scratch/dautotune-cards/g2-d0-golden-baseline.md — deterministic synthetic corpus + metrics + D0_BASELINE.md in native-tests/ only; PitchCorrector READ-ONLY; CI-native-dsp verification; findings reported NOT fixed (D1 scope).
 - G2-D1 card PREPARED (scratch/dautotune-cards/g2-d1-adaptive-yin.md): adaptive-window YIN + V/UV decision; dispatches after D0 lands. Design informed by code read: kDetectWindow=512 @ kDownsample=4 → effective 128-sample window ≈ 1 period at 110 Hz (under-resolved at low F0); kCompare=256; first-trough selection with 0.16/0.27 thresholds.
 Rationale: GPT round-2 sequencing (D0 → D1 → ...), all cards respect scope isolation and the .devin/ no-write rule (DC-002 attempt 1 lesson).
+
+D-014 — GPT round-3 verdict: GO D3 conditional; D2 test extension; real voice before G3 (2026-10-31)
+Evidence: brief sent via Chrome debug :9222 thread 6ae57dbb (same thread as round-1/2; canvas writing-block insertion — composer confirmed by position/parent-chain BEFORE send, no canvas incident). Reply archived docs/orchestration/gpt_round3_reply.md (2177 chars, canvas doc "GPT ROUND-3 VERDICT").
+- D1 ACCEPTED (adaptive YIN 3-pass + bounded prediction + strict temporal confirmation; NO pYIN/neural without comparative evidence).
+- D2 ACCEPTED WITH TEST EXTENSION: keep the tracking implementation; ADD tests for staccato notes, scale-boundary vibrato, 300–1200-cent intervals; measure applied F0, target-note transitions, correction ratio (not only reported detectedHz); add target-note hysteresis ONLY IF tests expose target chatter.
+- D3 GO: clean-room TD-PSOLA, preserve the existing audio engine interface. Mandatory gates: corrected-output F0, formant retention, discontinuities, transient handling, actual DSP signal delay, realtime safety.
+- D4 AFTER D3: full-chain host verification with reproducible golden signals @ 44.1k + 48k, baseline vs new shifter under identical conditions; reject regressions that improve pitch accuracy at the expense of unacceptable timbre/artefacts/latency.
+- REAL VOICE BEFORE G3 IMPLEMENTATION: small license-vetted VocalSet subset + consented recordings; objective + blind-listening evidence; do not mistake synthetic-corpus success for commercial vocal quality.
+- G1 REMAINS BLOCKED_HARDWARE (device latency/routing/16KB runtime/thermal need real Android testing; diagnostic acoustic loopback is NOT authoritative mic-to-headphone latency evidence).
+- HERMES CONTINUOUS LOOP reaffirmed: Devin implements each bounded card; Hermes independently reviews diff/tests/artifacts/CI; rejected work returns to Devin; ask GPT at architectural/quality milestones only.
+- Next GPT consultation: after D3 AND D4 (corrected-output F0, artefact examples, formant comparison, actual signal-delay measurements, CI status, real-voice evidence if available).
+- DO NOT rewrite Android UI before DSP quality results; do NOT claim Live certification or PRODUCT_COMPLETE.
+Rationale: round-3 sent exactly per the round-2 requested evidence (DC-002A verification + D0/D1 golden evidence + DC-003 REV2 design); verdict encodes the next 4 gates and the evidence-priority order.
+
+D-015 — GPT round-4 verdict: G2 HOST-VERIFIED PASS / G3 PREPARATION GO / COMMERCIAL RELEASE BLOCKED (2026-10-31, docs/orchestration/gpt_round4_reply.md):
+- G2 ACCEPTED: D0-D4 host-verified DSP evidence. Do NOT rewrite TD-PSOLA without a reproducible failure. RECONCILE the D4 p95 process-time discrepancy (GPT saw ~54.5-54.9 us vs the report's 19 us) before the next review. The 2.27 ms onset delay is NOT a total Live latency measurement (DSP-only; total requires G1 device data).
+- REAL VOICE FIRST (next execution order): Devin implements a license-vetted vocal validation harness: >= 20 real singing clips, >= 4 singers, prefer VocalSet with documented CC BY attribution + owner-consented recordings when available. Objective output-F0, formant, pumping, artifact measurements + minimum 3-person blind listening smoke test.
+- G3 UX PREPARATION GO: Hermes may design UI architecture + interaction contracts NOW; full Compose implementation gated on real-voice smoke-test PASS; do NOT wait for Samsung hardware to begin UI implementation after this gate.
+- DSP QUALITY FOLLOW-UP: investigate the 3.5-4.2 dB envelope pumping (steady-state vocal segments; quantify modulation; correct audible defects without regressing F0/formants/transients/latency). Do not optimize CPU on host timing alone.
+- G1 REMAINS BLOCKED_HARDWARE (Samsung A+S series, wired/USB audio, independent latency verification, thermal, route-change, 16 KB native runtime validation).
+- HERMES AUTONOMY: Devin sole coding agent; Hermes independently verifies each bounded task; owner approval required for commercial/legal/spending/production actions.
+- Next execution order: real-vocal harness -> vocal-quality + pumping verification -> G3 Compose after PASS -> G1 device certification when hardware arrives -> G4 release candidate.
+- Next GPT review: real-vocal measurements + blind listening results + pumping root-cause evidence + G3 readiness decision. Never claim VOCAL-QUALITY VERIFIED / LIVE CERTIFIED / PRODUCT_COMPLETE prematurely.
