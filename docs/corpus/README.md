@@ -118,3 +118,31 @@ cmake --build .local-test-build && ctest --test-dir .local-test-build -R d5_
 3. Smoke-test PASS criterion (round-4 bar): no rater reports systematic
    artifacts on corrected outputs; median naturalness of `output` ≥ 3;
    no unanimous "corrected sounds wrong" verdict on any pair.
+
+
+---
+
+## Orchestrator prep notes — corpus v1 (committed by Hermes after the D5 schema landed)
+
+Data: VocalSet v1.1 (Zenodo 1193957, CC BY 4.0) subset + Annotated-VocalSet
+(Zenodo 7061507, CC BY 4.0) per-note F0 annotations. 20 clips, 4 singers
+(f1, f3, m1, m3), techniques `straight` only, contexts `long_tones` (3 clips per
+singer: 2 long_tones vowels + 3 scales vowels — 5 per singer, 20 total).
+
+Processing applied before commit (documented honestly):
+- 6 male `scales` clips exceeded the 15 s schema bound (15.69–19.53 s) — trimmed
+  to exactly 15.0 s from t=0 (no time shift; annotation rows beyond 15 s dropped
+  or clipped to t_end=15.0 — counts per file in the source JSON, 6 clips).
+- Peak check: all 20 clips ≤ −1 dBFS natively (max −2.1 dBFS) — no scaling applied.
+- WAV format verified: RIFF/WAVE PCM format 1, mono, 16-bit, 44100 Hz, all 20.
+- Annotations converted from the Annotated-VocalSet 17-column format to the
+  4-column schema: `t_start_s,t_end_s` verbatim; `f0_hz` = the segment MEDIAN F0
+  (column 7 of the source); `midi` = the source MIDI note number (column 15).
+  Only `Sound` segments retained (Rest/Transition rows dropped by rule).
+- SHA-256 in the manifest is of the FINAL committed bytes (post-trim).
+
+Selection rationale: `straight` technique isolates pitch correction without
+ornament (vibrato/belt/breathy stress-test the detector, not the corrector —
+they are a future expansion); `long_tones` give ≥2 sustained segments per singer
+for the R3 envelope-pump battery; `scales` give 14–17 annotated note boundaries
+per clip for R1/R2. Male scales clipped at 15 s still contain ≥14 of 17 notes.
