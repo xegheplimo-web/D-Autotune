@@ -13,6 +13,7 @@ import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -44,10 +45,20 @@ class MainActivity : Activity() {
     private var running = false
     private var callbacksRegistered = false
     private var streamLine = ""
+    // DC-003 REV2 debug diagnostic (measurement class 1) state.
+    @Volatile private var measuring = false
+    private var measThread: Thread? = null
 
     private val routeCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
             mainHandler.post { if (running && !hasWiredOutput()) stopAudio("Tai nghe đã ngắt kết nối") }
+        }
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+            // A device appearing mid-diagnostic invalidates the acoustic path.
+            mainHandler.post {
+                if (measuring) cancelLoopbackDiagnostic(
+                    "INVALID_MEASUREMENT · thiết bị audio thay đổi giữa chừng")
+            }
         }
     }
     private val refresh = object : Runnable {
@@ -134,6 +145,13 @@ class MainActivity : Activity() {
         pitchValue = metric("GIỌNG HÁT")
         targetValue = metric("NỐT CHUẨN")
         correctionValue = metric("SỬA CAO ĐỘ")
+        // DC-003 REV2 debug entry: long-press arms/cancels the diagnostic
+        // acoustic loopback measurement. NOT part of the singing UI flow.
+        metrics.setOnLongClickListener {
+            if (measuring) cancelLoopbackDiagnostic("Đã hủy đo chẩn đoán")
+            else startLoopbackDiagnostic()
+            true
+        }
         monitor.addView(metrics)
         monitor.addSpace(16)
         telemetry = text("Chưa kết nối audio", 11f, muted)
@@ -171,6 +189,8 @@ class MainActivity : Activity() {
         panel.addView(startButton, LinearLayout.LayoutParams(-1, dp(60)))
         panel.addSpace(14)
         panel.addView(text("An toàn: chỉ hoạt động khi app mở · chỉ cho tai nghe có dây/USB · bắt đầu với âm lượng thấp. Không dùng loa ngoài.", 12f, muted))
+        panel.addSpace(6)
+        panel.addView(text("Debug: giữ lâu hàng chỉ số để đo loopback chẩn đoán loa→mic (rút tai nghe trước).", 11f, muted))
         setContentView(scroll)
     }
 
@@ -221,7 +241,111 @@ class MainActivity : Activity() {
             AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_ACCESSORY)
     }
 
+    // Anything that reroutes speaker/mic away from the phone's built-in pair
+    // invalidates the acoustic speaker->mic diagnostic path.
+    private fun hasExternalAudioOutput(): Boolean = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
+        it.type in setOf(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_ACCESSORY,
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER)
+    }
+
+    // DC-003 REV2 measurement class 1 - diagnostic acoustic loopback only.
+    // Result is labeled diagnostic; it is never a mic->DSP->headphone latency.
+    private fun startLoopbackDiagnostic() {
+        if (running) {
+            status.text = "Không đo trong phiên hát · dừng Live trước"
+            return
+        }
+        if (measuring) return
+        if (hasExternalAudioOutput()) {
+            status.text = "INVALID_MEASUREMENT · đang có tai nghe/thiết bị ngoài · đường loa→mic không hợp lệ, rút ra rồi đo"
+            return
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 102)
+            return
+        }
+        if (!NativeAudio.start()) {
+            status.text = "Không khởi động được audio: ${NativeAudio.lastError()}"
+            return
+        }
+        // 100 cycles, chirp peak cap 0.25 FS, NCC validity threshold 0.6,
+        // 250 ms search window (all clamped again inside the engine).
+        val rc = NativeAudio.armLoopback(100, 0.25f, 0.6f, 250)
+        if (rc != 0) {
+            NativeAudio.stop()
+            status.text = "INVALID_MEASUREMENT · armLoopback lỗi $rc"
+            return
+        }
+        measuring = true
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        status.text = "ĐANG ĐO loopback loa→mic · chẩn đoán I/O, KHÔNG phải độ trễ mic→DSP→tai nghe · giữ lâu hàng chỉ số để hủy"
+        // Poll on a worker thread: pollLoopback() runs the per-cycle NCC scan,
+        // which is intentionally kept OFF the audio callback and off the UI.
+        val deadlineMs = SystemClock.uptimeMillis() + 240_000  // global stop
+        measThread = Thread {
+            var state = 0
+            while (measuring && SystemClock.uptimeMillis() < deadlineMs) {
+                state = NativeAudio.pollLoopback()
+                if (state == 4 || state == 0) break
+                Thread.sleep(25)
+            }
+            val summary = NativeAudio.loopbackSummary()
+            val cycles = NativeAudio.loopbackCycles()
+            NativeAudio.stop()
+            mainHandler.post { finishLoopbackDiagnostic(summary, cycles, state) }
+        }
+        measThread?.start()
+    }
+
+    private fun cancelLoopbackDiagnostic(message: String) {
+        measuring = false
+        NativeAudio.stopLoopback()
+        measThread?.join(400)
+        measThread = null
+        NativeAudio.stop()
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        status.text = message
+    }
+
+    private fun finishLoopbackDiagnostic(summary: DoubleArray, cycles: FloatArray, lastState: Int) {
+        if (!measuring) return  // cancelled; cancelLoopbackDiagnostic owns status
+        measuring = false
+        measThread = null
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (summary.size < 8 || lastState != 4) {
+            status.text = "INVALID_MEASUREMENT · đo không hoàn tất (state=$lastState) · thử lại"
+            return
+        }
+        val done = summary[3].toInt()
+        val valid = summary[2].toInt()
+        if (valid <= 0 || done <= 0) {
+            status.text = "INVALID_MEASUREMENT · không có tương quan đáng tin (0/$done chu kỳ hợp lệ) · kiểm tra loa/mic/độ ồn"
+            return
+        }
+        var minNcc = Float.MAX_VALUE
+        var i = 0
+        while (i + 2 < cycles.size) {
+            if ((cycles[i + 2].toInt() and 1) != 0 && cycles[i + 1] < minNcc) minNcc = cycles[i + 1]
+            i += 3
+        }
+        val median = "%.1f".format(Locale.US, summary[0])
+        val p95 = "%.1f".format(Locale.US, summary[1])
+        val min = "%.1f".format(Locale.US, summary[6])
+        val max = "%.1f".format(Locale.US, summary[7])
+        val nccText = if (minNcc == Float.MAX_VALUE) "n/a" else "%.2f".format(Locale.US, minNcc)
+        status.text = "CHẨN ĐOÁN loa→mic: median $median ms · p95 $p95 ms · min/max $min/$max · $valid/$done chu kỳ hợp lệ (ncc đỉnh thấp nhất $nccText)"
+        telemetry.text = "Chẩn đoán đường I/O · KHÔNG phải độ trễ mic→DSP→tai nghe. " +
+            "E2E chuẩn: ${if (NativeAudio.authoritativeLatencyMs().isNaN()) "MEASUREMENT_UNAVAILABLE (cần fixture phần cứng)" else "?"} · " +
+            "không dùng làm bằng chứng gate G1."
+    }
+
     private fun tryStart() {
+        if (measuring) {
+            status.text = "Đang đo chẩn đoán · hủy đo trước (giữ lâu hàng chỉ số)"
+            return
+        }
         if (!hasWiredOutput()) {
             status.text = "Cần cắm tai nghe có dây hoặc USB để tránh hú tiếng"
             Toast.makeText(this, "Cắm tai nghe có dây/USB rồi thử lại", Toast.LENGTH_LONG).show()
@@ -256,11 +380,15 @@ class MainActivity : Activity() {
     @Deprecated("Framework permission callback is used to avoid extra AndroidX dependencies")
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 101 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) tryStart()
+        if (requestCode == 102) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startLoopbackDiagnostic()
+            else status.text = "Cần cấp quyền microphone để đo loopback"
+        } else if (requestCode == 101 && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) tryStart()
         else if (requestCode == 101) status.text = "Cần cấp quyền microphone để hát trực tiếp"
     }
 
     override fun onStop() {
+        if (measuring) cancelLoopbackDiagnostic("Đã dừng đo khi ứng dụng không hiển thị")
         stopAudio("Đã tạm dừng khi ứng dụng không hiển thị")
         super.onStop()
     }

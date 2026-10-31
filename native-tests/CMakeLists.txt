@@ -43,4 +43,11 @@ add_test(NAME d2_tracking COMMAND d2_tracking)
 add_custom_command(TARGET d2_tracking POST_BUILD
                    COMMAND d2_tracking
                    COMMENT "D2 tracking + hysteresis test report")
+# DC-003 REV2: normalized cross-correlation lag detection (pure math, no Oboe).
+add_executable(test_ping_math test_ping_math.cpp
+               ../app/src/main/cpp/PingMath.cpp)
+target_include_directories(test_ping_math PRIVATE ../app/src/main/cpp)
+target_compile_features(test_ping_math PRIVATE cxx_std_17)
+target_compile_options(test_ping_math PRIVATE -O2 -Wall -Wextra -Wpedantic)
+add_test(NAME ping_math COMMAND test_ping_math)
 
