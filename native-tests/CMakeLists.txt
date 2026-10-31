@@ -55,6 +55,18 @@ add_test(NAME d3_shifter COMMAND d3_shifter)
 add_custom_command(TARGET d3_shifter POST_BUILD
                    COMMAND d3_shifter
                    COMMENT "D3 TD-PSOLA shifter test report")
+# D4: end-to-end full-chain verification — live TD-PSOLA vs frozen D2-era
+# granular shifter (d2_reference) under identical conditions, both rates.
+add_executable(d4_e2e test_d4_e2e.cpp corpus_gen.cpp metrics.cpp
+               d2_reference.cpp ../app/src/main/cpp/PitchCorrector.cpp)
+target_include_directories(d4_e2e PRIVATE ../app/src/main/cpp ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(d4_e2e PRIVATE cxx_std_17)
+target_compile_options(d4_e2e PRIVATE -O2 -Wall -Wextra -Wpedantic)
+add_test(NAME d4_e2e COMMAND d4_e2e)
+# Same trick: ctest hides passing output, so the D4 A/B tables re-run at build.
+add_custom_command(TARGET d4_e2e POST_BUILD
+                   COMMAND d4_e2e
+                   COMMENT "D4 end-to-end A/B verification report")
 # DC-003 REV2: normalized cross-correlation lag detection (pure math, no Oboe).
 add_executable(test_ping_math test_ping_math.cpp
                ../app/src/main/cpp/PingMath.cpp)
