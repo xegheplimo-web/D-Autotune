@@ -16,8 +16,9 @@ docs/corpus/
   manifest.jsonl         one flat JSON object per clip (see below)
   clips/<clip_id>.wav    16-bit PCM mono, 44100 or 48000 Hz, <= 15.0 s
   annotations/<clip_id>.csv   per-note reference F0 (see below)
-  listening_key.csv      committed A/B role key (written by the pack
-                         generator on each run; header-only until then)
+  listening_key_v2.csv   PRIVATE A/B role key (written by the v2 pack
+                         generator on each run; .gitignore'd — committed
+                         only AFTER the raters' sheets are frozen)
   listening_sheet.md     3-person blind rating sheet template
   listening_pack/        GENERATED randomized A/B WAVs (gitignored,
                          regenerated — never committed)
@@ -109,10 +110,15 @@ cmake --build .local-test-build && ctest --test-dir .local-test-build -R d5_
 ## Blind-listening procedure (BLOCKED_HUMAN — the 3-person smoke test)
 
 1. `ctest --test-dir <build> -R d5_listening_pack` (or run the binary)
-   renders `listening_pack/pair_NN_{A,B}.wav` — randomized, RMS-matched
-   A/B pairs for ≥5 clips (first clip per distinct singer, then fill to
-   8). The role key is rewritten at `listening_key.csv` (committed;
-   auditors only — raters must not read it).
+   renders `listening_pack/pair_NN_{A,B}.wav` — 10 randomized, RMS-matched
+   A/B pairs (v2, G2-D8): 8 main pairs balanced 2 per singer (1
+   `long_tones` + 1 `scales` each) plus 2 hidden A/A control pairs
+   (byte-identical audio in both slots — rater-reliability checks; raters
+   are not told which). The PRIVATE role key is rewritten at
+   `listening_key_v2.csv` (.gitignore'd — auditors only, and only after
+   the raters' sheets are frozen). The v1 `listening_key.csv` was
+   committed publicly and is VOID: the v2 ordering is re-randomized under
+   a fresh seed, so the old key predicts nothing.
 2. Each of ≥3 raters scores every pair on `listening_sheet.md`
    (naturalness 1–5, audible artifacts y/n, A/B preference).
 3. Smoke-test PASS criterion (round-4 bar): no rater reports systematic

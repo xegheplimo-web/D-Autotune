@@ -2,9 +2,9 @@
 
 Rater id: ______   Date: ______   Headphones/monitors: ______
 
-Instructions: for each `pair_NN` play `_A.wav` and `_B.wav` in the order
-you prefer (do NOT open `listening_key.csv`). One of the two is the
-uncorrected take, one is the same take through D-Autotune at full amount.
+Instructions: for each `pair_NN`, play `_A.wav` and `_B.wav` in the order
+you prefer. Rate each for naturalness. If you think the two files are the
+same recording, you may say so. Do not attempt to open any key file.
 Score what you HEAR, not what you expect.
 
 | pair | A naturalness (1–5) | B naturalness (1–5) | audible artifacts? (y/n, which file, describe) | preference (A/B/none) |
@@ -17,6 +17,8 @@ Score what you HEAR, not what you expect.
 | pair_06 | | | | |
 | pair_07 | | | | |
 | pair_08 | | | | |
+| pair_09 | | | | |
+| pair_10 | | | | |
 
 Scales:
 
@@ -27,7 +29,7 @@ Scales:
   robotic/metallic timbre, doubled or smeared onsets, pitch wobble.
   Name the file slot (`A`/`B`) and timestamp if possible.
 - **Preference**: which file you would keep for a demo — `A`, `B`, or
-  `none` if indistinguishable.
+  `none` — identical/indistinguishable.
 
 Return the filled sheet to the orchestrator. Verdict rules are in
 `docs/corpus/README.md` (≥3 raters required).
