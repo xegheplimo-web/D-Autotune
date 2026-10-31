@@ -36,3 +36,18 @@ gradle/wrapper/gradle-wrapper.jar
 # (PROJECT_STATE.md, DISCUSSIONS.md, DECISIONS.md, VERIFICATION.md) is
 # an audit artifact that must survive git operations and be visible to
 # future sessions. See lead-orchestrator §19 and .orchestrator/ files.
+
+# Local dev noise — never project files
+.local-test-build/
+.vscode/
+
+# Devin run logs (work product, audit trail lives in .orchestrator/RUNS.jsonl
+# and docs/baseline/*_CHANGES.md)
+ci-h-run1.log
+dc-003-rev2-run1.log
+g2-d0-run1.log
+g2-d1-run1.log
+g2-d2-run1.log
+g2-d2ext-run1.log
+g2-d3-run1.log
+g2-d4-run1.log
