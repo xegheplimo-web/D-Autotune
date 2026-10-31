@@ -21,7 +21,7 @@ Legend: IMPLEMENTED / PARTIAL / MISSING / BROKEN / UNVERIFIED / BLOCKED_*
 | 11 | Foreground-only guarantee | IMPLEMENTED — onStop() stops engine; no foreground service in manifest | MainActivity.kt:247-250; AndroidManifest.xml (no service) |
 | 12 | Permissions / privacy | IMPLEMENTED + **APK-LEVEL VERIFIED** (binary AXML string pool = exactly 1 permission `RECORD_AUDIO`; INTERNET/WRITE_EXTERNAL/CAMERA/FOREGROUND_SERVICE absent in built APK from run 41178223381) | AndroidManifest.xml:3-10; MainActivity.kt:209-245; apk-verify evidence in VERIFICATION.md Gate 11 |
 | 13 | Mic routing (built-in mic preferred while wired headphones out) | MISSING — input stream never sets preferred device (default routing; on headset-mic phones the headset mic will be used, contradicting directive §3 "built-in phone mic when supported") | AudioEngine.cpp:30-37 (no setPreferredDevice) |
-| 14 | Latency / xrun instrumentation | MISSING — no timestamps, no algorithmic-latency counters (lookahead/window/overlap-add), only missingFrames_/framesProcessed_ counters; G1 gate (bypass vs full-DSP latency) unmeasurable with current code | AudioEngine.h:28-32 |
+| 14 | Latency / xrun instrumentation | **IMPLEMENTED** (DC-002, commit `db65a0f`, CI run 41179251125 GREEN): snapshot 8→12 `[…, running, xruns, algoLatencyMs, cbMaxMs, cbAvgMs]`; xruns = Oboe `getXRunCount()` on the output stream (input builder has NO data callback — verified AudioEngine.cpp:29-44, so the callback+timing are output-only); algoLatency = `kChunk·1000/sr + retuneMs` recomputed in start()/setParameters(); callback max/avg from steady_clock — single-writer cbTotalUs_, relaxed atomics, no alloc/lock/log/JNI. G1 (bypass vs full-DSP) is now executable once hardware arrives | AudioEngine.{h,cpp} diff db65a0f; VERIFICATION.md Gate 11 |
 | 15 | Exclusive/MMMAP latency path + fallback ladder | MISSING (never requested) | AudioEngine.cpp:16-18 |
 | 16 | UI functional (key/scale/amount/speed/reverb + live metrics) | IMPLEMENTED (plain Activity, no AndroidX — matches G3 deferral decision) | MainActivity.kt:98-197 |
 | 17 | i18n VI/EN | MISSING — all UI strings hardcoded Vietnamese inline in Kotlin; strings.xml has 2 entries | MainActivity.kt (all literal text); strings.xml:2-3 |
@@ -39,7 +39,7 @@ Legend: IMPLEMENTED / PARTIAL / MISSING / BROKEN / UNVERIFIED / BLOCKED_*
 ## 2. Critical-path gap list (priority order, from evidence)
 
 1. **CI android job** — RESOLVED 2026-10-31 (run 41178223381 GREEN: both jobs + artifact 1.93 MB; 5-step cascade documented in VERIFICATION.md Gate 11).
-2. **Latency instrumentation** (#14) — required before ANY device measurement (G1). Without it, G1 is unexecutable even with hardware. Candidate card DC-002 after CI green.
+2. **Latency instrumentation** (#14) — RESOLVED 2026-10-31 (DC-002, `db65a0f`, CI run 41179251125 GREEN + APK re-verified: 16KB PASS, RECORD_AUDIO only). G1 executable once hardware arrives.
 3. **Native stream-error recovery** (#9) + **mic routing preference** (#13) — required by directive §4/§3; current behavior breaks the "built-in mic preferred" product requirement on headset-mic phones.
 4. **Exclusive-mode ladder** (#15) — latency target work; only meaningful AFTER #2 provides measurement.
 5. **G2 DSP chain** (GPT-approved order): adaptive-window YIN + voicing (must output F0+confidence+voiced+continuity) → tracking+hysteresis → TD-PSOLA clean-room → end-to-end verification with real-voice corpus.

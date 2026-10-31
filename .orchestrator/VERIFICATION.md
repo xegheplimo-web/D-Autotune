@@ -70,6 +70,12 @@ APK-level verification (downloaded from run 41178223381, python ELF parser + AXM
 - **API-level gate PASS (binary AXML structured parse)**: `<uses-sdk>` in the built manifest: `minSdkVersion = 30` (attr resId 0x0101020c), `targetSdkVersion = 36` (0x01010270) — matches source (`app/build.gradle.kts`) exactly. This closes the previously flagged known limitation (minSdk/targetSdk were source-level only).
 Historical evidence (superseded runs, preserved for audit): run 41175801147 native-dsp success / android failure (license hang — see D-008 for root-cause discipline), runs 41177042055/41177443204/41177598995 failure cascade as listed above.
 
+DC-002 verification (latency/xrun instrumentation, commit `db65a0f`, run 41179251125 GREEN):
+- Both jobs success on Devin's commit (first attempt after the .devin/ trap killed attempt 1 before any code edit — attempt 1 never touched the tree; recorded in RUNS.jsonl).
+- Diff review (Hermes, §9): snapshot 8→12 with prefix unchanged; xruns = `getXRunCount()` on the OUTPUT stream only (input builder has no data callback — verified AudioEngine.cpp:29-44, so the timing/xrun are unambiguous output-only); algoLatency = `kChunk·1000/sr + retuneMs` recomputed in start()/setParameters(); callback max/avg from steady_clock with single-writer cbTotalUs_ (plain uint64, callback-thread-only) + relaxed atomics; no allocation/locks/logging/JNI in the callback. Kotlin: indices 8-11 displayed; `text =` valid property (real getter exists); layout comment updated.
+- APK re-verification (downloaded from run 41179251125): 16 KB PT_LOAD alignment PASS for all 6 .so (0x4000 × every segment, both ABIs); permission gate PASS (exactly 1 permission: RECORD_AUDIO).
+- RUNS.jsonl: rows for the full cascade + DC-002 attempt 1 (died) + attempt 2 (green).
+
 ---
 
 Updated verification status:
