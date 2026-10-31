@@ -9,9 +9,9 @@ Legend: IMPLEMENTED / PARTIAL / MISSING / BROKEN / UNVERIFIED / BLOCKED_*
 | # | Area | Status | Evidence (file:line or run id) |
 |---|---|---|---|
 | 1 | Git repo + remote | IMPLEMENTED | 3 commits (`2b5ac36`,`fe926ee`,`1bafe05`); origin verified; `gh repo view` isPrivate=false |
-| 2 | Build config (Gradle 8.13 / AGP 8.13.2 / Kotlin 2.2.20 / JDK 17) | IMPLEMENTED (compile UNVERIFIED — no local SDK; CI android job BLOCKED at setup step) | build.gradle.kts, settings.gradle.kts, gradle-wrapper.properties (SHA256 pinned) |
+| 2 | Build config (Gradle 8.13 / AGP 8.13.2 / Kotlin 2.2.20 / JDK 17) | **VERIFIED** — `:app:assembleDebug` completed remotely (run 41178223381), APK artifact built + SHA256 verified | build.gradle.kts, settings.gradle.kts, gradle-wrapper.properties (SHA256 pinned); run 41178223381 |
 | 3 | CI `native-dsp` (host C++ ctest) | IMPLEMENTED + VERIFIED PASS (remote) | run 41175801147 job native-dsp conclusion=success |
-| 4 | CI `android` (APK build) | BROKEN — license step hangs inside `android-actions/setup-android@v3`; `Compile debug APK` never reached; root cause NOT proven to be the action itself (GPT correction D-007). Fix in flight: Devin DC-001 (ownership: ci.yml only) | run 41175801147 job android conclusion=failure, log tail "Review licenses that have not been accepted (y/N)?" |
+| 4 | CI `android` (APK build) | **VERIFIED GREEN** (run 41178223381 @ `848693c`: both jobs success, artifact `D-Autotune-debug-APK` 1.93 MB uploaded, downloaded + SHA256 verified + APK-level checks passed). Full 5-step fix cascade documented in VERIFICATION.md Gate 11 | runs 41175801147→41177042055→41177443204→41177598995→41178223381 |
 | 5 | Pitch detection (YIN-family, normalized CMND, parabolic refine) | IMPLEMENTED on synthetic host tests; real-voice accuracy UNVERIFIED (no corpus) | PitchCorrector.cpp:69-123; TEST_RESULTS.md 11 assertions incl. 228.022 Hz detected |
 | 6 | Pitch correction/shifting (2-head granular Hann crossfade) | PARTIAL — works on synthetic (zero-crossing ~220 Hz from 228 Hz input); NOT formant-preserving; metallic-artifact risk acknowledged in docs; GPT decision: replace with clean-room TD-PSOLA in G2 | PitchCorrector.cpp:136-144; docs/ROADMAP.md P1; docs/TEST_RESULTS.md |
 | 7 | Realtime callback safety (no heap/locks/logging in audio path) | IMPLEMENTED — verified by code read: stack buffer `float capture[512]` (AudioEngine.cpp:100), PitchCorrector::process allocation-free (fixed std::array members only), relaxed atomics, no mutex/logging/JNI in callback | AudioEngine.cpp:92-109; PitchCorrector.h:33-71 |
@@ -19,7 +19,7 @@ Legend: IMPLEMENTED / PARTIAL / MISSING / BROKEN / UNVERIFIED / BLOCKED_*
 | 9 | Native stream-error / route-change recovery | MISSING — `AudioStreamErrorCallback` (onErrorBeforeClose/onErrorAfterClose) not implemented; disconnect (device removal, service死亡) only covered by Kotlin-side AudioDeviceCallback for headset removal; other failure modes leave engine dead with no recovery attempt | AudioEngine.h:11 (implements only AudioStreamDataCallback); AudioEngine.cpp:92-94 returns Stop on !running_ |
 | 10 | Headset-unplug handling | IMPLEMENTED (Kotlin level) | MainActivity.kt:47-51 + 204-207 (AudioDeviceCallback → stopAudio on removal when no wired output) |
 | 11 | Foreground-only guarantee | IMPLEMENTED — onStop() stops engine; no foreground service in manifest | MainActivity.kt:247-250; AndroidManifest.xml (no service) |
-| 12 | Permissions / privacy | IMPLEMENTED — RECORD_AUDIO runtime flow (line 215-244); manifest: NO internet permission, allowBackup=false, usesCleartextTraffic=false, mic uses-feature required=true | AndroidManifest.xml:3-10; MainActivity.kt:209-245 |
+| 12 | Permissions / privacy | IMPLEMENTED + **APK-LEVEL VERIFIED** (binary AXML string pool = exactly 1 permission `RECORD_AUDIO`; INTERNET/WRITE_EXTERNAL/CAMERA/FOREGROUND_SERVICE absent in built APK from run 41178223381) | AndroidManifest.xml:3-10; MainActivity.kt:209-245; apk-verify evidence in VERIFICATION.md Gate 11 |
 | 13 | Mic routing (built-in mic preferred while wired headphones out) | MISSING — input stream never sets preferred device (default routing; on headset-mic phones the headset mic will be used, contradicting directive §3 "built-in phone mic when supported") | AudioEngine.cpp:30-37 (no setPreferredDevice) |
 | 14 | Latency / xrun instrumentation | MISSING — no timestamps, no algorithmic-latency counters (lookahead/window/overlap-add), only missingFrames_/framesProcessed_ counters; G1 gate (bypass vs full-DSP latency) unmeasurable with current code | AudioEngine.h:28-32 |
 | 15 | Exclusive/MMMAP latency path + fallback ladder | MISSING (never requested) | AudioEngine.cpp:16-18 |
@@ -29,7 +29,7 @@ Legend: IMPLEMENTED / PARTIAL / MISSING / BROKEN / UNVERIFIED / BLOCKED_*
 | 19 | WAV record/export | MISSING | no code; roadmap P3 |
 | 20 | Device capability diagnostics / latency modes | MISSING | no code |
 | 21 | DSP golden + Android instrumentation tests | PARTIAL — host golden tests exist (test_dsp.cpp, 11 assertions, remote PASS); Android instrumented tests: NONE | native-tests/; no androidTest/ dir |
-| 22 | 16 KB page-size ELF alignment | IMPLEMENTED in link flag only (`-Wl,-z,max-page-size=16384`); APK-level verification UNVERIFIED (needs built APK — blocked by #4); `useLegacyPackaging=false` set (required) | app/src/main/cpp/CMakeLists.txt:9-10; app/build.gradle.kts:38 |
+| 22 | 16 KB page-size ELF alignment | **VERIFIED at APK level** — all PT_LOAD segments of all 6 .so in run 41178223381's APK have `p_align == 0x4000` (16384), incl. `libc++_shared.so` + `liboboe.so` (python ELF parser; hard evidence, not build-flag trust). Link flag `-Wl,-z,max-page-size=16384` + `useLegacyPackaging=false` | app/src/main/cpp/CMakeLists.txt:9-10; app/build.gradle.kts:38; VERIFICATION.md Gate 11 |
 | 23 | 64-bit ARM | IMPLEMENTED-PARTIAL — abiFilters arm64-v8a + x86_64 (armeabi-v7a intentionally absent; fine for Play 2027 64-bit requirement) | app/build.gradle.kts:17 |
 | 24 | Dependency provenance/licenses | IMPLEMENTED (Oboe 1.11.0 Apache-2.0 via Google Maven Prefab; no other runtime deps; no copyleft) | docs/THIRD_PARTY.md; app/build.gradle.kts:42 |
 | 25 | Trademark ("Auto-Tune" = Antares mark) | BLOCKED_EXTERNAL — keep internal name; owner decision before any store listing | docs/THIRD_PARTY.md; GPT directive §12 |
@@ -38,7 +38,7 @@ Legend: IMPLEMENTED / PARTIAL / MISSING / BROKEN / UNVERIFIED / BLOCKED_*
 
 ## 2. Critical-path gap list (priority order, from evidence)
 
-1. **CI android job broken** (#4) — blocks every APK-level gate. Devin DC-001 in flight; Hermes verifies the remote run after push. PASS = assembleDebug + valid APK artifact (never "action upgraded").
+1. **CI android job** — RESOLVED 2026-10-31 (run 41178223381 GREEN: both jobs + artifact 1.93 MB; 5-step cascade documented in VERIFICATION.md Gate 11).
 2. **Latency instrumentation** (#14) — required before ANY device measurement (G1). Without it, G1 is unexecutable even with hardware. Candidate card DC-002 after CI green.
 3. **Native stream-error recovery** (#9) + **mic routing preference** (#13) — required by directive §4/§3; current behavior breaks the "built-in mic preferred" product requirement on headset-mic phones.
 4. **Exclusive-mode ladder** (#15) — latency target work; only meaningful AFTER #2 provides measurement.
