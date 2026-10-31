@@ -465,11 +465,10 @@ bool testTransient() {
         dsp.psolaDriveForTest(220.0f, 1.15f);
         const std::vector<float> out = runDsp(dsp, sig);
         int hits = 0;
-        double firstIdx = -1.0, lastIdx = -1.0;
+        double firstIdx = -1.0;
         for (std::size_t i = t0; i < sig.size(); ++i) {
             if (std::abs(out[i * 2]) > 0.2) {
                 if (firstIdx < 0.0) firstIdx = static_cast<double>(i);
-                lastIdx = static_cast<double>(i);
                 // count excursions: a new hit after returning below threshold
                 if (i > 0 && std::abs(out[(i - 1) * 2]) <= 0.2) ++hits;
             }
