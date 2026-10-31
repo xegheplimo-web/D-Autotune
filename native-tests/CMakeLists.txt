@@ -16,3 +16,9 @@ target_include_directories(d0_baseline PRIVATE ../app/src/main/cpp ${CMAKE_CURRE
 target_compile_features(d0_baseline PRIVATE cxx_std_17)
 target_compile_options(d0_baseline PRIVATE -O2 -Wall -Wextra -Wpedantic)
 add_test(NAME d0_baseline COMMAND d0_baseline)
+# ctest only surfaces output on failure; re-run once during `cmake --build` so
+# the baseline table lands in the CI build log for docs/baseline/D0_BASELINE.md.
+add_custom_command(TARGET d0_baseline POST_BUILD
+                   COMMAND d0_baseline
+                   COMMENT "D0 baseline report")
+
