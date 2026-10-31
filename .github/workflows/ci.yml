@@ -22,13 +22,29 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      # ubuntu-latest already ships an Android SDK at $ANDROID_HOME
+      # (cmdline-tools/latest incl. sdkmanager, platform-tools).
+      # setup-android is dropped: in run 41175801147 it hung inside its own
+      # `sdkmanager --licenses` call, which feeds the process a fixed 10-line
+      # 'y' buffer that the "Review licenses ... (y/N)?" prompt outlived.
+      # @v4 uses the identical mechanism (src/main.ts), so upgrading is not a
+      # fix. Here `yes` cannot starve the prompt and `timeout` fails fast
+      # (124) instead of hanging until the 6h job timeout.
       - name: Install Android components
+        timeout-minutes: 15
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.0.12077973' 'cmake;3.22.1'
+          SDKMANAGER="$(command -v sdkmanager || ls "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | tail -n1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager not found on PATH or under ${ANDROID_HOME:-$ANDROID_SDK_ROOT}/cmdline-tools"
+            exit 1
+          fi
+          echo "Using sdkmanager: $SDKMANAGER"
+          "$SDKMANAGER" --version
+          yes | timeout 300 "$SDKMANAGER" --licenses > /dev/null || true
+          yes | timeout 600 "$SDKMANAGER" 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.0.12077973' 'cmake;3.22.1'
       - name: Compile debug APK
-        run: ./gradlew --no-daemon :app:assembleDebug
+        # gradlew is committed mode 100644 (no exec bit); invoke via sh.
+        run: sh gradlew --no-daemon :app:assembleDebug
       - uses: actions/upload-artifact@v4
         if: success()
         with:
