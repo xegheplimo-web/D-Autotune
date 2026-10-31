@@ -150,3 +150,9 @@ D-017 — D6 landing accepted; next-order = blind listening → G3; R4 residual 
 - Rationale: gates were never loosened (R2 ±60 Hz unchanged; new R1 gate ADDED); every fix is evidence-driven; questions to GPT keep the review protocol honest.
 
 
+
+
+D-017 — Round-5 verdict execution plan (2026-10-31, per GPT verdict in `docs/orchestration/gpt_round5_reply.md`):
+- D7 (next Devin dispatch): R1 residual-window diagnosis (output F0 vs instantaneous targetHz + annotation, worst windows per singer, per-cause table — no engine changes unless a reproduced defect) + detector-coverage classification (86.0% → silence/transition/breath/missed, per singer + context; synthetic 97.8% never substituted) + R4 >1.10× nonblocking warning (hard gate stays 1.25×+0.01).
+- D8 (after D7): blind pack redesign — 2 pairs/singer (1 long-tone + 1 scales) + 2 hidden A/A controls, fresh private randomization, key written to a gitignored local path only (NEVER committed before ratings frozen; old public key already in git history so the new pack must use a different order). 3-person listening stays BLOCKED_HUMAN.
+- G3 Compose implementation remains gated on the listening smoke PASS; G3 architecture prep + G1 device-test prep may proceed in parallel. Corpus expansion for G4 (≥8 singers, ≥40 clips, vibrato/falsetto/breathy + coverage) planned as a Hermes-owned data task.

@@ -186,3 +186,10 @@ Summary (verified facts, not claims):
 - PENDING (planned, not fabricated): GitHub repo creation (`D-Autotune` public, `xegheplimo-web`), remote push (`main` → `origin`), CI verification (`gh run list` after push). These are recorded as planned steps (`.orchestrator/DECISIONS.md` D-003/D-004/D-005) with verification criteria, not as completed actions.
 
 No claims of CI success, no fabricated test results, no hidden omissions. The audit trail exists in 4 files (`PROJECT_STATE.md`, `DISCUSSIONS.md`, `DECISIONS.md`, `VERIFICATION.md`) and is tracked by git (`.gitignore` excludes `.devin/` to prevent ForceAsk session death; `.orchestrator/` is NOT excluded, ensuring audit persistence).
+
+
+Gate 19 — GPT round-5 consultation + verdict (2026-10-31, Hermes-verified):
+- Round-5 brief sent via the same ChatGPT thread; send mechanics: ProseMirror composer injection rejected by the send-control (composer treated as untrusted/empty state) → resolved with OS-clipboard Set-Clipboard + CDP Ctrl+V paste (trusted input events) — send button "Gửi" appeared and the full 8,649-char brief was sent; thread text + timestamps verified in-page.
+- GPT independently verified the repo at `5e381ee` and CI runs 41206064557 + 41207486610 (both SUCCESS), reviewed D6_CHANGES.md, R1–R5 numbers, and the listening pack generator. Verdict: **D6 ACCEPTED / OBJECTIVE VOCAL GATES PASS / HUMAN LISTENING PENDING / G3 CONDITIONAL GO**.
+- GPT-caught defects (independent, before we flagged): listening_key.csv committed publicly + pair skew f1 5/f3 1/m1 1/m3 1 → pack redesign ordered with PRIVATE key; R1's 28–67¢ p95 attribution rejected as unevidenced (out-vs-snap uses segment-median internal target) → R1 residual-window diagnosis ordered as D7 first item; detector coverage 87.3%→86.0% must be recorded and classified.
+- Archive: `docs/orchestration/gpt_round5_reply.md`. Raw capture: cards dir `gpt_round5_reply_raw.txt`.

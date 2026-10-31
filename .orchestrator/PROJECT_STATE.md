@@ -163,3 +163,7 @@ In flight: DC-002 — latency/xrun instrumentation (Devin, card `scratch/dautotu
 - Blind listening BLOCKED_HUMAN (pack ready); G3 implementation unblocked pending GPT round-5 verdict; G1 BLOCKED_HARDWARE.
 
 
+
+### Round-5 verdict (2026-10-31, post-D6): D6 ACCEPTED / HUMAN LISTENING PENDING / G3 CONDITIONAL GO
+- GPT verified repo @5e381ee + both CI runs independently; archived `docs/orchestration/gpt_round5_reply.md`.
+- Ordered sequence: (1) D7 = R1 residual-window diagnosis + detector-coverage classification (86.0% → silence/transition/breath/missed) + R4 >1.10× nonblocking warning; (2) D8 = blind pack redesign (2 pairs/singer long-tone+scales + 2 A/A controls, PRIVATE key — never committed before ratings frozen); (3) 3-person listening = BLOCKED_HUMAN; (4) if PASS → G3 Compose implementation; (5) parallel: corpus expansion (≥8 singers/≥40 clips/vibrato+falsetto) + G1 device prep for G4.
